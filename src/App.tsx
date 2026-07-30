@@ -67,6 +67,7 @@ import {
   assignmentScope,
   can,
   hasRole,
+  roleAssignmentKey,
   roleDefinitions,
   roleNames,
   toggleRole,
@@ -138,6 +139,55 @@ function useLocalState<T>(key: string, initial: T) {
   return [value, setValue] as const;
 }
 
+function useModalKeyboard(
+  dialogRef: React.RefObject<HTMLElement | null>,
+  onClose: () => void,
+) {
+  useEffect(() => {
+    const previouslyFocused = document.activeElement as HTMLElement | null;
+    const dialog = dialogRef.current;
+    const focusableSelector =
+      'button:not([disabled]), input:not([disabled]), textarea:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])';
+    const focusable = () =>
+      Array.from(
+        dialog?.querySelectorAll<HTMLElement>(focusableSelector) ?? [],
+      );
+
+    window.requestAnimationFrame(() => {
+      const initialFocus =
+        dialog?.querySelector<HTMLElement>("[autofocus]") ?? focusable()[0];
+      initialFocus?.focus();
+    });
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        onClose();
+        return;
+      }
+      if (event.key !== "Tab") return;
+
+      const controls = focusable();
+      if (!controls.length) return;
+      const first = controls[0];
+      const last = controls.at(-1)!;
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("keydown", handleKeyDown);
+      previouslyFocused?.focus();
+    };
+  }, [dialogRef, onClose]);
+}
+
 function Avatar({
   initials,
   color = "ink",
@@ -148,7 +198,7 @@ function Avatar({
   color?: string;
   size?: "xs" | "sm" | "md" | "lg" | "xl";
   status?: boolean;
-}) {
+}): React.JSX.Element {
   return (
     <span className={`avatar avatar-${size} avatar-${color}`}>
       {initials}
@@ -157,7 +207,7 @@ function Avatar({
   );
 }
 
-function Logo({ compact = false }: { compact?: boolean }) {
+function Logo({ compact = false }: { compact?: boolean }): React.JSX.Element {
   return (
     <div className="brand" aria-label="Kommunity">
       <span className="brand-mark">
@@ -188,7 +238,7 @@ function Button({
   className?: string;
   disabled?: boolean;
   type?: "button" | "submit";
-}) {
+}): React.JSX.Element {
   return (
     <button
       type={type}
@@ -212,7 +262,7 @@ function IconButton({
   icon: LucideIcon;
   onClick?: () => void;
   className?: string;
-}) {
+}): React.JSX.Element {
   return (
     <button
       className={`icon-button ${className}`}
@@ -238,7 +288,7 @@ function Sidebar({
   onCreate: () => void;
   assignments: RoleAssignment[];
   activeRole: RoleName | "all";
-}) {
+}): React.JSX.Element {
   const visibleNavItems = navItems.filter(
     (item) =>
       item.id !== "access" ||
@@ -317,7 +367,7 @@ function MobileHeader({
 }: {
   page: Page;
   onNavigate: (page: Page) => void;
-}) {
+}): React.JSX.Element {
   return (
     <header className="mobile-header">
       <Logo compact />
@@ -339,7 +389,7 @@ function BottomNav({
   page: Page;
   onNavigate: (page: Page) => void;
   onCreate: () => void;
-}) {
+}): React.JSX.Element {
   const items = navItems.filter((item) =>
     ["home", "discover", "events", "messages"].includes(item.id),
   );
@@ -376,7 +426,7 @@ function AppHeader({
   eyebrow?: string;
   onNotify?: () => void;
   actions?: React.ReactNode;
-}) {
+}): React.JSX.Element {
   return (
     <header className="page-header">
       <div>
@@ -402,7 +452,7 @@ function EventMiniCard({
 }: {
   event: EventItem;
   onOpen?: () => void;
-}) {
+}): React.JSX.Element {
   return (
     <button className="event-mini-card" onClick={onOpen}>
       <span className={`date-tile date-${event.color}`}>
@@ -429,7 +479,7 @@ function PersonRow({
   person: Person;
   connected?: boolean;
   onConnect: () => void;
-}) {
+}): React.JSX.Element {
   return (
     <div className="person-row">
       <Avatar initials={person.initials} color={person.color} size="sm" />
@@ -456,7 +506,7 @@ function RightRail({
   onNavigate: (page: Page) => void;
   connectedIds: string[];
   onConnect: (person: Person) => void;
-}) {
+}): React.JSX.Element {
   return (
     <aside className="right-rail">
       <div className="rail-heading">
@@ -504,7 +554,7 @@ function HomePage({
   onNotify: () => void;
   savedPosts: string[];
   onToggleSave: (id: string) => void;
-}) {
+}): React.JSX.Element {
   const [liked, setLiked] = useState<string[]>([]);
 
   const toggleLike = (id: string) => {
@@ -702,7 +752,7 @@ function DiscoverPage({
   joinedIds: string[];
   onToggleJoin: (id: string, name: string) => void;
   onNotify: () => void;
-}) {
+}): React.JSX.Element {
   const [query, setQuery] = useState("");
   const filtered = communities.filter(
     (community) =>
@@ -738,6 +788,7 @@ function DiscoverPage({
         <label className="search-field">
           <Search size={17} />
           <input
+            aria-label="Search communities or topics"
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             placeholder="Search communities or topics"
@@ -865,7 +916,7 @@ function GroupsPage({
   onToast: (message: string) => void;
   onNavigate: (page: Page) => void;
   canManageCommunity: boolean;
-}) {
+}): React.JSX.Element {
   const [tab, setTab] = useState<"yours" | "discover">("yours");
   const visible =
     tab === "yours"
@@ -919,7 +970,7 @@ function GroupsPage({
         </div>
         <label className="inline-search">
           <Search size={16} />
-          <input placeholder="Search groups" />
+          <input aria-label="Search groups" placeholder="Search groups" />
         </label>
       </div>
       <div className="group-grid">
@@ -988,7 +1039,7 @@ function EventCard({
   going: boolean;
   onToggleGoing: () => void;
   onOpen: () => void;
-}) {
+}): React.JSX.Element {
   return (
     <article className="event-card">
       <div className={`event-card-art poster-${event.color}`}>
@@ -1050,7 +1101,7 @@ function EventsPage({
   onNotify: () => void;
   canManageCommunity: boolean;
   canPresent: boolean;
-}) {
+}): React.JSX.Element {
   const [tab, setTab] = useState<"upcoming" | "mine">("upcoming");
   const [selectedEvent, setSelectedEvent] = useState<EventItem | null>(null);
   const visibleEvents =
@@ -1179,9 +1230,11 @@ function EventDetailModal({
   onToggleGoing: () => void;
   onClose: () => void;
   canPresent: boolean;
-}) {
+}): React.JSX.Element {
   const [view, setView] = useState<"details" | "checkin">("details");
   const [checkedIn, setCheckedIn] = useState(false);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  useModalKeyboard(dialogRef, onClose);
   const qrCells = Array.from({ length: 121 }, (_, index) => {
     const row = Math.floor(index / 11);
     const column = index % 11;
@@ -1196,6 +1249,7 @@ function EventDetailModal({
     <div className="modal-backdrop" onMouseDown={onClose}>
       <div
         className="modal event-detail-modal"
+        ref={dialogRef}
         role="dialog"
         aria-modal="true"
         aria-label={`${event.title} event details`}
@@ -1319,7 +1373,7 @@ function MessagesPage({
   messages: typeof initialMessages;
   onSend: (body: string) => void;
   theme: "light" | "dark";
-}) {
+}): React.JSX.Element {
   const [activeId, setActiveId] = useState("m1");
   const [draft, setDraft] = useState("");
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -1387,7 +1441,10 @@ function MessagesPage({
         </div>
         <label className="message-search">
           <Search size={16} />
-          <input placeholder="Search conversations" />
+          <input
+            aria-label="Search conversations"
+            placeholder="Search conversations"
+          />
         </label>
         <div className="conversation-tabs">
           <button className="active">All</button>
@@ -1491,6 +1548,7 @@ function MessagesPage({
           <label className="attachment-button" title="Attach an image">
             <Paperclip size={18} />
             <input
+              aria-label="Attach an image"
               type="file"
               accept="image/*"
               onChange={(event) => {
@@ -1501,6 +1559,7 @@ function MessagesPage({
             />
           </label>
           <input
+            aria-label={`Message ${activeConversation.name}`}
             ref={messageInputRef}
             value={draft}
             onChange={(event) => setDraft(event.target.value)}
@@ -1561,7 +1620,7 @@ function ConnectionsPage({
   connectedIds: string[];
   onConnect: (person: Person) => void;
   onNotify: () => void;
-}) {
+}): React.JSX.Element {
   const [tab, setTab] = useState<"connections" | "incoming" | "sent">(
     "connections",
   );
@@ -1629,7 +1688,10 @@ function ConnectionsPage({
           <div className="toolbar compact-toolbar">
             <label className="search-field">
               <Search size={17} />
-              <input placeholder="Search your connections" />
+              <input
+                aria-label="Search your connections"
+                placeholder="Search your connections"
+              />
             </label>
             <Button variant="secondary" icon={SlidersHorizontal}>
               Sort
@@ -1750,7 +1812,7 @@ function NotificationsPage({
   onNotify,
 }: {
   onNotify: (message?: string) => void;
-}) {
+}): React.JSX.Element {
   const [read, setRead] = useState<string[]>(["n4"]);
   const notifications = [
     {
@@ -1839,7 +1901,7 @@ function ProfilePage({
   onNavigate: (page: Page) => void;
   onToast: (message: string) => void;
   assignments: RoleAssignment[];
-}) {
+}): React.JSX.Element {
   return (
     <div className="narrow-page profile-page">
       <AppHeader
@@ -1949,7 +2011,7 @@ function SettingsPage({
   onToast: (message: string) => void;
   assignments: RoleAssignment[];
   onOpenAccess: () => void;
-}) {
+}): React.JSX.Element {
   const [discoverable, setDiscoverable] = useState(true);
   const [eventEmails, setEventEmails] = useState(true);
   return (
@@ -2139,18 +2201,13 @@ const accessMembers = [
   },
 ];
 
-function RoleIcon({ role }: { role: RoleName }) {
+function RoleIcon({ role }: { role: RoleName }): React.JSX.Element {
   if (role === "root") return <Crown size={16} />;
   if (role === "maintainer") return <Wrench size={16} />;
   if (role === "presenter") return <Mic2 size={16} />;
   if (role === "user") return <UserRound size={16} />;
   return <ShieldCheck size={16} />;
 }
-
-const roleAssignmentKey = (assignment: RoleAssignment): string =>
-  assignment.scope === "platform"
-    ? `${assignment.role}:platform`
-    : `${assignment.role}:${assignment.scope}:${assignment.scopeId}`;
 
 function FloatingRoleSwitcher({
   assignments,
@@ -2160,7 +2217,7 @@ function FloatingRoleSwitcher({
   assignments: RoleAssignment[];
   activeKey: string;
   onSwitch: (key: string) => void;
-}) {
+}): React.JSX.Element {
   const [open, setOpen] = useState(false);
   const activeAssignment = assignments.find(
     (assignment) => roleAssignmentKey(assignment) === activeKey,
@@ -2263,7 +2320,7 @@ function AccessPage({
   directory: RoleDirectory;
   viewerAssignments: RoleAssignment[];
   onToggleRole: (userId: string, role: RoleName) => void;
-}) {
+}): React.JSX.Element {
   const [query, setQuery] = useState("");
   const [roleFilter, setRoleFilter] = useState<RoleName | "all">("all");
   const canEdit = can(viewerAssignments, "platform:manage");
@@ -2354,6 +2411,7 @@ function AccessPage({
         <label className="inline-search access-search">
           <Search size={16} />
           <input
+            aria-label="Search people"
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             placeholder="Search people"
@@ -2444,10 +2502,11 @@ function AccessPage({
       <div className="access-safety-note">
         <Lock size={18} />
         <span>
-          <strong>Safety rules</strong>
+          <strong>Local permission preview</strong>
           <small>
-            The baseline user role and the final root assignment cannot be
-            removed. Community and event roles are always scope-bound.
+            This prototype stores preview assignments in this browser only.
+            Production authorization is enforced and audited by the server.
+            The baseline user role and final root assignment remain protected.
           </small>
         </span>
       </div>
@@ -2461,12 +2520,15 @@ function CreateModal({
 }: {
   onClose: () => void;
   onPublish: (body: string) => void;
-}) {
+}): React.JSX.Element {
   const [body, setBody] = useState("");
+  const dialogRef = useRef<HTMLDivElement>(null);
+  useModalKeyboard(dialogRef, onClose);
   return (
     <div className="modal-backdrop" onMouseDown={onClose}>
       <div
         className="modal"
+        ref={dialogRef}
         role="dialog"
         aria-modal="true"
         aria-labelledby="create-title"
@@ -2489,6 +2551,7 @@ function CreateModal({
           </span>
         </div>
         <textarea
+          aria-label="Post body"
           autoFocus
           value={body}
           onChange={(event) => setBody(event.target.value)}
@@ -2516,7 +2579,7 @@ function Onboarding({
   onComplete,
 }: {
   onComplete: () => void;
-}) {
+}): React.JSX.Element {
   const [step, setStep] = useState(1);
   const [name, setName] = useState("Maya Chen");
   const [handle, setHandle] = useState("maya-chen-makes");
@@ -2674,7 +2737,7 @@ const initialRoleDirectory: RoleDirectory = {
   ],
 };
 
-function App() {
+function App(): React.JSX.Element {
   const [page, setPage] = useState<Page>("home");
   const [theme, setTheme] = useLocalState<"light" | "dark">(
     "kommunity-theme",

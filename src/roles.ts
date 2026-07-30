@@ -46,6 +46,11 @@ export type RoleDefinition = {
   tone: "ink" | "violet" | "blue" | "sage" | "orange" | "coral";
 };
 
+export const roleAssignmentKey = (assignment: RoleAssignment): string =>
+  assignment.scope === "platform"
+    ? `${assignment.role}:platform`
+    : `${assignment.role}:${assignment.scope}:${assignment.scopeId}`;
+
 export const roleDefinitions: Record<RoleName, RoleDefinition> = {
   root: {
     role: "root",
@@ -136,16 +141,22 @@ export const can = (
     case "platform:maintain":
       return hasRole(assignments, "maintainer");
     case "community:transfer":
-      return hasRole(assignments, "super_admin", context);
+      return (
+        Boolean(context.communityId) &&
+        hasRole(assignments, "super_admin", context)
+      );
     case "community:manage":
       return (
-        hasRole(assignments, "super_admin", context) ||
-        hasRole(assignments, "admin", context)
+        Boolean(context.communityId) &&
+        (hasRole(assignments, "super_admin", context) ||
+          hasRole(assignments, "admin", context))
       );
     case "event:present":
       return (
-        hasRole(assignments, "presenter", context) ||
-        can(assignments, "community:manage", context)
+        (Boolean(context.eventId) &&
+          hasRole(assignments, "presenter", context)) ||
+        (Boolean(context.communityId) &&
+          can(assignments, "community:manage", context))
       );
     case "content:participate":
       return hasRole(assignments, "user");
@@ -169,8 +180,14 @@ export const toggleRole = (
   role: RoleName,
 ): RoleAssignment[] => {
   if (role === "user") return assignments;
-  const exists = assignments.some((assignment) => assignment.role === role);
+  const target = defaultAssignmentFor(role);
+  const targetKey = roleAssignmentKey(target);
+  const exists = assignments.some(
+    (assignment) => roleAssignmentKey(assignment) === targetKey,
+  );
   return exists
-    ? assignments.filter((assignment) => assignment.role !== role)
-    : [...assignments, defaultAssignmentFor(role)];
+    ? assignments.filter(
+        (assignment) => roleAssignmentKey(assignment) !== targetKey,
+      )
+    : [...assignments, target];
 };

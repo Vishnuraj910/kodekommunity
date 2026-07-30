@@ -28,7 +28,8 @@ without changing the user's stored assignments.
 
 ## Run locally
 
-Requirements: Node.js 20+ and pnpm 11+.
+Requirements: Node.js 22.6+ and pnpm 10.16+ (the repository declares pnpm
+10.28.2 for reproducibility).
 
 ```bash
 pnpm install
@@ -41,10 +42,15 @@ No environment variables or external services are needed for the local
 experience. Interactive state is stored in the browser and can be reset from
 DevTools by clearing local storage.
 
+Role editing in this standalone build is a local permission preview, not a
+security boundary. The production architecture described in `AGENTS.md`
+requires every privileged operation to be authorized and audited by the server.
+
 ## Verification
 
 ```bash
 pnpm typecheck
+pnpm test
 pnpm build
 ```
 
