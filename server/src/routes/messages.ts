@@ -4,6 +4,7 @@ import {
   errorSchema,
   idempotencyHeadersSchema,
   messagePageSchema,
+  messageCreatedEventSchema,
   messageRequestSchema,
   messageSchema,
   paginationQuerySchema,
@@ -74,6 +75,13 @@ export const messageRoutes: FastifyPluginAsyncZod = async (fastify) => {
         request.headers["idempotency-key"],
       );
       if (result.replayed) reply.header("Idempotent-Replayed", "true");
+      if (!result.replayed) {
+        fastify.messageHub.publish({
+          type: "message.created",
+          conversationId: request.params.conversationId,
+          message: messageCreatedEventSchema.shape.message.parse(result.value),
+        });
+      }
       return reply.code(201).send(result.value);
     },
   );

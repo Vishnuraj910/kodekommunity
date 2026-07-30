@@ -2,6 +2,10 @@ packages:
   - "."
   - "server"
 
+overrides:
+  "@fastify/static": 10.1.2
+  effect: 3.20.0
+
 # Hold every direct and transitive release for seven days before pnpm may
 # resolve it. This applies to installs and future updates.
 minimumReleaseAge: 10080

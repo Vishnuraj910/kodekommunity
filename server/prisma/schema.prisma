@@ -41,6 +41,19 @@ enum CommunityVisibility {
   PRIVATE
 }
 
+enum GroupVisibility {
+  PUBLIC
+  PRIVATE
+}
+
+enum BroadcastStatus {
+  DRAFT
+  SCHEDULED
+  LIVE
+  ENDED
+  CANCELLED
+}
+
 enum RsvpStatus {
   GOING
   NOT_GOING
@@ -50,6 +63,12 @@ enum ConversationType {
   COMMUNITY
   DIRECT
   EVENT
+  GROUP
+}
+
+enum ChannelVisibility {
+  PUBLIC
+  PRIVATE
 }
 
 enum AvatarTone {
@@ -81,8 +100,64 @@ model User {
   messages                Message[]
   auditEvents             AuditLog[]                @relation("AuditActor")
   idempotencyRecords      IdempotencyRecord[]
+  passwordCredential      PasswordCredential?
+  sessions                Session[]
+  oidcIdentities          OidcIdentity[]
+  createdGroups           Group[]                   @relation("GroupCreator")
+  groupMemberships        GroupMember[]
+  posts                   Post[]
+  broadcasts              Broadcast[]
+  createdConversations    Conversation[]            @relation("ConversationCreator")
 
   @@index([displayName, id])
+}
+
+model PasswordCredential {
+  userId       String   @id @db.VarChar(64)
+  passwordHash String   @db.VarChar(255)
+  createdAt    DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt    DateTime @updatedAt @db.Timestamptz(3)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Session {
+  id         String    @id @default(cuid()) @db.VarChar(64)
+  tokenHash  String    @unique @db.Char(64)
+  userId     String    @db.VarChar(64)
+  createdAt  DateTime  @default(now()) @db.Timestamptz(3)
+  expiresAt  DateTime  @db.Timestamptz(3)
+  lastSeenAt DateTime  @default(now()) @db.Timestamptz(3)
+  revokedAt  DateTime? @db.Timestamptz(3)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, expiresAt])
+  @@index([expiresAt, revokedAt])
+}
+
+model OidcIdentity {
+  issuer      String   @db.VarChar(500)
+  subject     String   @db.VarChar(255)
+  userId      String   @db.VarChar(64)
+  createdAt   DateTime @default(now()) @db.Timestamptz(3)
+  lastLoginAt DateTime @default(now()) @db.Timestamptz(3)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([issuer, subject])
+  @@unique([userId, issuer])
+  @@index([userId])
+}
+
+model OidcFlow {
+  stateHash    String   @id @db.Char(64)
+  codeVerifier String   @db.VarChar(128)
+  nonce        String   @db.VarChar(128)
+  createdAt    DateTime @default(now()) @db.Timestamptz(3)
+  expiresAt    DateTime @db.Timestamptz(3)
+
+  @@index([expiresAt])
 }
 
 model Community {
@@ -99,8 +174,93 @@ model Community {
   events          Event[]
   conversations   Conversation[]
   auditEvents     AuditLog[]
+  groups          Group[]
+  posts           Post[]
+  broadcasts      Broadcast[]
 
   @@index([name, id])
+}
+
+model Group {
+  id          String          @id @default(cuid()) @db.VarChar(64)
+  communityId String          @db.VarChar(64)
+  slug        String          @db.VarChar(80)
+  name        String          @db.VarChar(120)
+  description String          @db.VarChar(1000)
+  visibility  GroupVisibility @default(PUBLIC)
+  createdById String          @db.VarChar(64)
+  createdAt   DateTime        @default(now()) @db.Timestamptz(3)
+  updatedAt   DateTime        @updatedAt @db.Timestamptz(3)
+  deletedAt   DateTime?       @db.Timestamptz(3)
+
+  community     Community      @relation(fields: [communityId], references: [id], onDelete: Cascade)
+  createdBy     User           @relation("GroupCreator", fields: [createdById], references: [id], onDelete: Restrict)
+  members       GroupMember[]
+  posts         Post[]
+  broadcasts    Broadcast[]
+  conversations Conversation[]
+
+  @@unique([communityId, slug])
+  @@index([communityId, createdAt, id])
+  @@index([communityId, visibility, deletedAt])
+}
+
+model Post {
+  id          String    @id @default(cuid()) @db.VarChar(64)
+  communityId String    @db.VarChar(64)
+  groupId     String?   @db.VarChar(64)
+  authorId    String    @db.VarChar(64)
+  body        String    @db.VarChar(10000)
+  createdAt   DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt   DateTime  @updatedAt @db.Timestamptz(3)
+  deletedAt   DateTime? @db.Timestamptz(3)
+
+  community Community @relation(fields: [communityId], references: [id], onDelete: Cascade)
+  group     Group?    @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  author    User      @relation(fields: [authorId], references: [id], onDelete: Restrict)
+
+  @@index([communityId, createdAt, id])
+  @@index([groupId, createdAt, id])
+  @@index([authorId, createdAt])
+  @@index([communityId, deletedAt, createdAt])
+}
+
+model Broadcast {
+  id          String          @id @default(cuid()) @db.VarChar(64)
+  communityId String          @db.VarChar(64)
+  groupId     String?         @db.VarChar(64)
+  authorId    String          @db.VarChar(64)
+  title       String          @db.VarChar(160)
+  body        String          @db.VarChar(5000)
+  status      BroadcastStatus @default(DRAFT)
+  startsAt    DateTime?       @db.Timestamptz(3)
+  endsAt      DateTime?       @db.Timestamptz(3)
+  createdAt   DateTime        @default(now()) @db.Timestamptz(3)
+  updatedAt   DateTime        @updatedAt @db.Timestamptz(3)
+  deletedAt   DateTime?       @db.Timestamptz(3)
+
+  community Community @relation(fields: [communityId], references: [id], onDelete: Cascade)
+  group     Group?    @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  author    User      @relation(fields: [authorId], references: [id], onDelete: Restrict)
+
+  @@index([communityId, startsAt, id])
+  @@index([groupId, startsAt, id])
+  @@index([communityId, status, deletedAt])
+  @@index([authorId, createdAt])
+}
+
+model GroupMember {
+  groupId   String           @db.VarChar(64)
+  userId    String           @db.VarChar(64)
+  status    MembershipStatus @default(ACTIVE)
+  joinedAt  DateTime         @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime         @updatedAt @db.Timestamptz(3)
+
+  group Group @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([groupId, userId])
+  @@index([userId, status])
 }
 
 model CommunityMember {
@@ -175,19 +335,31 @@ model EventRsvp {
 }
 
 model Conversation {
-  id          String           @id @default(cuid()) @db.VarChar(64)
-  communityId String           @db.VarChar(64)
-  title       String           @db.VarChar(160)
+  id          String            @id @default(cuid()) @db.VarChar(64)
+  communityId String            @db.VarChar(64)
+  groupId     String?           @db.VarChar(64)
+  directKey   String?           @unique @db.Char(64)
+  slug        String?           @db.VarChar(80)
+  title       String            @db.VarChar(160)
+  description String            @default("") @db.VarChar(1000)
   type        ConversationType
-  createdAt   DateTime         @default(now()) @db.Timestamptz(3)
-  updatedAt   DateTime         @updatedAt @db.Timestamptz(3)
+  visibility  ChannelVisibility @default(PRIVATE)
+  createdById String?           @db.VarChar(64)
+  createdAt   DateTime          @default(now()) @db.Timestamptz(3)
+  updatedAt   DateTime          @updatedAt @db.Timestamptz(3)
+  deletedAt   DateTime?         @db.Timestamptz(3)
 
   community    Community                 @relation(fields: [communityId], references: [id], onDelete: Cascade)
+  group        Group?                    @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  createdBy    User?                     @relation("ConversationCreator", fields: [createdById], references: [id], onDelete: Restrict)
   participants ConversationParticipant[]
   messages     Message[]
 
+  @@unique([communityId, slug])
   @@index([communityId, updatedAt])
   @@index([updatedAt, id])
+  @@index([groupId, updatedAt])
+  @@index([communityId, visibility, deletedAt])
 }
 
 model ConversationParticipant {

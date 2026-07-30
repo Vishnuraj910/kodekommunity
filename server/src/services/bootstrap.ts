@@ -60,7 +60,7 @@ export const getBootstrap = async (
       take: 100,
     }),
     prisma.conversation.findMany({
-      where: { participants: { some: { userId } } },
+      where: { deletedAt: null, participants: { some: { userId } } },
       select: {
         id: true,
         communityId: true,
@@ -110,7 +110,8 @@ export const getBootstrap = async (
         type: conversation.type.toLowerCase() as
           | "community"
           | "direct"
-          | "event",
+          | "event"
+          | "group",
         updatedAt: conversation.updatedAt.toISOString(),
         lastMessage: lastMessage
           ? {

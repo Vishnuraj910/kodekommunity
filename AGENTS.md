@@ -255,6 +255,12 @@ Authorization requirements:
 
 ## Testing and delivery
 
+- Use test-driven development for every behavior change: confirm the public
+  seam, demonstrate a focused failing test, implement only enough behavior to
+  pass it, then run the affected suite before the next slice.
+- Enforce executable coverage gates across statements, branches, functions,
+  and lines: backend at least 90% and frontend at least 80%. Do not lower,
+  bypass, or satisfy thresholds with implementation-coupled tests.
 - Reproduce bugs before fixing them and retain a regression check at the
   closest reliable seam.
 - Run type checking and the production build for every application change.
@@ -314,6 +320,12 @@ Use this portable Markdown schema:
 | Defined plan and implementation | Architectural and code impact | Key factors and metrics |
 | --- | --- | --- |
 | Establish the first end-to-end Fastify, Prisma, and PostgreSQL backend while keeping the existing root Vite client in place until a separately verified client-folder migration is justified. | **Backend:** Add the designated `server/` layer with environment, Prisma, authentication, authorization, OpenAPI, route, and service modules. **Data:** Add reviewed migrations for identities, scoped roles, communities, events, conversations, messages, idempotency, and audit. **Frontend:** Add a narrow API service and connect core RSVP, messaging, and role-management flows through the Vite `/api` proxy. | **Security:** All protected operations require an active database identity and object-scoped authorization. **Reliability:** Privileged mutations are idempotent and audited. **Performance:** List endpoints are bounded and use predicate-aligned indexes. **Recovery:** Migrations are additive; roll forward with a corrective migration or revert application code without deleting persisted data. |
+
+### Active plan 4: Preferred OIDC authentication and social publishing
+
+| Defined plan and implementation | Architectural and code impact | Key factors and metrics |
+| --- | --- | --- |
+| Make standards-compliant OIDC Authorization Code with PKCE the preferred login and registration flow, with email/password as an explicitly secondary option. Add working group, post, broadcast, channel, direct-message, and real-time chat capabilities. | **Backend:** Add session, OIDC identity, local credential, group, post, broadcast, and channel ownership to Prisma; add authentication, social, and WebSocket route/service modules with shared Zod contracts. **Frontend:** Add accessible auth entry points and connect existing social surfaces to authenticated APIs and typed real-time events. **Data:** Add additive migrations and an idempotent realistic seed with at least two users for each scoped role. | **Security:** Store only salted scrypt password hashes, opaque hashed session tokens, and OIDC subject bindings; use HttpOnly SameSite cookies, PKCE/state/nonce, object authorization, idempotency, rate limits, and audit. **Testing:** TDD at HTTP, DOM, credential, and realtime seams; enforce backend ≥90% and frontend ≥80% across statements, branches, functions, and lines. **Reliability:** Bound feeds/chat history, validate WebSocket ingress, handle reconnect/duplicates, and retain soft-deleted social content. **Recovery:** Use additive migrations and roll-forward fixes without exposing or logging credentials. |
 
 ## Definition of done
 

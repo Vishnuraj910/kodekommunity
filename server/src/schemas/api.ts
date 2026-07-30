@@ -88,7 +88,7 @@ export const conversationSchema = z.object({
   id: identifierSchema,
   communityId: identifierSchema,
   title: z.string().min(1).max(160),
-  type: z.enum(["community", "direct", "event"]),
+  type: z.enum(["community", "direct", "event", "group"]),
   updatedAt: z.string().datetime(),
   lastMessage: z
     .object({
@@ -117,6 +117,16 @@ export const messageSchema = z.object({
   createdAt: z.string().datetime(),
   own: z.boolean(),
 });
+
+export const liveMessageSchema = messageSchema.omit({ own: true });
+
+export const messageCreatedEventSchema = z.object({
+  type: z.literal("message.created"),
+  conversationId: identifierSchema,
+  message: liveMessageSchema,
+});
+
+export type LiveMessage = z.infer<typeof liveMessageSchema>;
 
 export const bootstrapSchema = z.object({
   user: userSchema,
@@ -217,6 +227,236 @@ export const roleChangeResponseSchema = z.object({
 export const idempotencyHeadersSchema = z.object({
   "idempotency-key": z.string().min(8).max(128),
 });
+
+export const emailSchema = z
+  .string()
+  .trim()
+  .email()
+  .max(320)
+  .transform((value) => value.toLowerCase());
+
+export const passwordSchema = z.string().min(12).max(128);
+
+export const registrationRequestSchema = z
+  .object({
+    displayName: z.string().trim().min(1).max(120),
+    email: emailSchema,
+    handle: z
+      .string()
+      .trim()
+      .toLowerCase()
+      .min(3)
+      .max(32)
+      .regex(/^[a-z0-9_]+$/),
+    password: passwordSchema,
+  })
+  .strict();
+
+export const loginRequestSchema = z
+  .object({
+    email: emailSchema,
+    password: z.string().max(128),
+  })
+  .strict();
+
+export const authenticatedUserSchema = z.object({
+  displayName: z.string().min(1).max(120),
+  email: emailSchema,
+  handle: z.string().min(1).max(32),
+});
+
+export const authResponseSchema = z.object({
+  user: authenticatedUserSchema,
+});
+
+export const oidcCallbackQuerySchema = z
+  .object({
+    code: z.string().min(1).max(4000),
+    state: z.string().min(16).max(512),
+  })
+  .catchall(z.string().max(4000));
+
+export const groupRequestSchema = z
+  .object({
+    name: z.string().trim().min(1).max(120),
+    slug: z
+      .string()
+      .trim()
+      .toLowerCase()
+      .min(3)
+      .max(80)
+      .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/),
+    description: z.string().trim().min(1).max(1000),
+    visibility: z.enum(["public", "private"]),
+  })
+  .strict();
+
+export const groupSchema = z.object({
+  id: identifierSchema,
+  communityId: identifierSchema,
+  name: z.string().min(1).max(120),
+  slug: z.string().min(1).max(80),
+  description: z.string().max(1000),
+  visibility: z.enum(["public", "private"]),
+  memberCount: z.number().int().nonnegative(),
+  joined: z.boolean(),
+  createdAt: z.string().datetime(),
+});
+
+export const groupPageSchema = z.object({
+  items: z.array(groupSchema).max(100),
+  nextCursor: identifierSchema.nullable(),
+});
+
+export type GroupResponse = z.infer<typeof groupSchema>;
+
+export const postRequestSchema = z
+  .object({
+    body: z.string().trim().min(1).max(10_000),
+    groupId: identifierSchema.optional(),
+  })
+  .strict();
+
+export const postSchema = z.object({
+  id: identifierSchema,
+  communityId: identifierSchema,
+  groupId: identifierSchema.nullable(),
+  body: z.string().min(1).max(10_000),
+  author: z.object({
+    id: identifierSchema,
+    displayName: z.string().min(1).max(120),
+    initials: z.string().min(1).max(8),
+    color: z.enum([
+      "ink",
+      "blue",
+      "coral",
+      "orange",
+      "plum",
+      "sage",
+      "violet",
+    ]),
+  }),
+  own: z.boolean(),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+});
+
+export const postPageSchema = z.object({
+  items: z.array(postSchema).max(100),
+  nextCursor: identifierSchema.nullable(),
+});
+
+export type PostResponse = z.infer<typeof postSchema>;
+
+export const broadcastRequestSchema = z
+  .object({
+    title: z.string().trim().min(1).max(160),
+    body: z.string().trim().min(1).max(5000),
+    groupId: identifierSchema.optional(),
+    startsAt: z.string().datetime().optional(),
+    endsAt: z.string().datetime().optional(),
+  })
+  .strict()
+  .superRefine((value, context) => {
+    if (value.endsAt && !value.startsAt) {
+      context.addIssue({
+        code: "custom",
+        message: "startsAt is required when endsAt is supplied",
+        path: ["startsAt"],
+      });
+    }
+    if (
+      value.startsAt &&
+      value.endsAt &&
+      Date.parse(value.endsAt) <= Date.parse(value.startsAt)
+    ) {
+      context.addIssue({
+        code: "custom",
+        message: "endsAt must be after startsAt",
+        path: ["endsAt"],
+      });
+    }
+  });
+
+export const broadcastSchema = z.object({
+  id: identifierSchema,
+  communityId: identifierSchema,
+  groupId: identifierSchema.nullable(),
+  title: z.string().min(1).max(160),
+  body: z.string().min(1).max(5000),
+  status: z.enum(["draft", "scheduled", "live", "ended", "cancelled"]),
+  startsAt: z.string().datetime().nullable(),
+  endsAt: z.string().datetime().nullable(),
+  author: z.object({
+    id: identifierSchema,
+    displayName: z.string().min(1).max(120),
+  }),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+});
+
+export const broadcastPageSchema = z.object({
+  items: z.array(broadcastSchema).max(100),
+  nextCursor: identifierSchema.nullable(),
+});
+
+export type BroadcastResponse = z.infer<typeof broadcastSchema>;
+
+export const channelRequestSchema = z
+  .object({
+    title: z.string().trim().min(1).max(160),
+    slug: z
+      .string()
+      .trim()
+      .toLowerCase()
+      .min(3)
+      .max(80)
+      .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/),
+    description: z.string().trim().min(1).max(1000),
+    visibility: z.enum(["public", "private"]),
+    groupId: identifierSchema.optional(),
+    participantIds: z.array(identifierSchema).max(100),
+  })
+  .strict();
+
+export const channelSchema = z.object({
+  id: identifierSchema,
+  communityId: identifierSchema,
+  groupId: identifierSchema.nullable(),
+  title: z.string().min(1).max(160),
+  slug: z.string().min(1).max(80),
+  description: z.string().max(1000),
+  visibility: z.enum(["public", "private"]),
+  participantCount: z.number().int().positive(),
+  updatedAt: z.string().datetime(),
+});
+
+export const channelPageSchema = z.object({
+  items: z.array(channelSchema).max(100),
+  nextCursor: identifierSchema.nullable(),
+});
+
+export type ChannelResponse = z.infer<typeof channelSchema>;
+
+export const directConversationRequestSchema = z
+  .object({
+    communityId: identifierSchema,
+    targetUserId: identifierSchema,
+  })
+  .strict();
+
+export const directConversationSchema = z.object({
+  id: identifierSchema,
+  communityId: identifierSchema,
+  title: z.string().min(1).max(160),
+  type: z.literal("direct"),
+  participantCount: z.literal(2),
+  updatedAt: z.string().datetime(),
+});
+
+export type DirectConversationResponse = z.infer<
+  typeof directConversationSchema
+>;
 
 export const messagePageSchema = z.object({
   items: z.array(messageSchema).max(100),

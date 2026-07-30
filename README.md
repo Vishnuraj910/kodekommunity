@@ -4,15 +4,16 @@ A privacy-first community application built from the supplied Kommunity
 product specification. It includes a responsive React client and a local
 Fastify, Prisma, and PostgreSQL backend for:
 
-- authenticated development identities and multi-role access
-- tenant-aware communities, events, RSVPs, conversations, and messages
+- preferred OIDC login/registration with local email/password fallback
+- multi-role, tenant-aware communities, groups, posts, broadcasts, events,
+  channels, direct conversations, and live messages
 - root-only idempotent role changes with attributed audit records
 - validated OpenAPI contracts and live/readiness health checks
 
-The product shell also includes:
-community discovery, groups, events and RSVP state, connections, conversations,
-notifications, onboarding, profile/privacy settings, dark mode, and local
-persistence.
+The React client is backed by the API rather than browser demo records. It
+includes responsive light/dark layouts, an administrative creation composer,
+real-time chat with reconnection and duplicate suppression, and a working emoji
+picker.
 
 ## Roles and access
 
@@ -46,7 +47,8 @@ Requirements:
 pnpm install
 createdb -h 127.0.0.1 -p 5432 kommunity_dev
 cp .env.example server/.env
-# Edit server/.env and replace YOUR_LOCAL_USER with your PostgreSQL role.
+# Edit DATABASE_URL and SEED_COMMON_PASSWORD in server/.env.
+# Uncomment all four OIDC connection values to enable preferred OIDC login.
 pnpm db:migrate
 pnpm db:seed
 pnpm dev:all
@@ -57,24 +59,25 @@ documentation at [http://127.0.0.1:8787/docs](http://127.0.0.1:8787/docs), and
 the readiness check at
 [http://127.0.0.1:8787/api/v1/health/ready](http://127.0.0.1:8787/api/v1/health/ready).
 
-No third-party API keys are required for local development. The
-`x-kommunity-user-id` development identity selector is enabled only when
-`ALLOW_DEMO_AUTH=true`; configuration validation rejects it in production.
-Preferences and non-sensitive preview state use versioned, validated local
-storage. Private message previews use session storage and expire after eight
-hours. Settings provides a confirmed action to remove all Kommunity-owned
-browser storage and offline caches.
+No third-party key is required for local email/password development. OIDC is
+the preferred UI path when configured; email/password remains available as a
+secondary disclosure. The `x-kommunity-user-id` selector is an opt-in local
+testing facility enabled only when `ALLOW_DEMO_AUTH=true`; startup validation
+rejects it in production.
 
-RSVPs, messages, role assignments, and audit events are persisted in
-PostgreSQL. The client role switcher remains a permission-preview tool; the
-server always authorizes against the authenticated database identity and never
-trusts the selected preview role.
+Credentials use parameterized scrypt with a unique salt. Sessions use opaque
+tokens whose hashes, expiry, and revocation state are persisted in PostgreSQL;
+the browser receives only an HttpOnly, SameSite cookie. OIDC uses Authorization
+Code with PKCE, state, nonce, verified email, exact issuer validation, and a
+one-time flow record. The role switcher remains a preview tool—the server always
+authorizes the authenticated database identity and object scope.
 
 ## Verification
 
 ```bash
 pnpm typecheck
 pnpm test:all
+pnpm test:coverage
 pnpm build:all
 pnpm db:status
 ```
@@ -100,8 +103,35 @@ Run the production dependency audit with:
 pnpm security:audit
 ```
 
-## Production integrations
+## OIDC configuration
 
-`.env.example` documents the local server settings and optional future OAuth,
-email, object-storage, and signing values. Third-party values must be loaded
-server-side from a managed secret store in production.
+The only external credentials currently consumed by the application are a
+generic OIDC confidential-client ID and secret:
+
+1. In your organization’s identity-provider console, create an **OIDC web
+   application** (sometimes called a confidential web client).
+2. Add the exact development redirect URI
+   `http://127.0.0.1:8787/api/v1/auth/oidc/callback`. For production, add the
+   equivalent HTTPS API callback and set `OIDC_REDIRECT_URI` to that exact URL.
+3. Copy the provider’s issuer URL (the base URL whose
+   `/.well-known/openid-configuration` document is available) into
+   `OIDC_ISSUER_URL`.
+4. Copy the generated client ID and client secret into `OIDC_CLIENT_ID` and
+   `OIDC_CLIENT_SECRET`. Keep the secret server-side; never use a `VITE_`
+   prefix.
+5. Leave `OIDC_SCOPES=openid profile email` unless the provider requires an
+   additional organization-specific scope. The provider must return a verified
+   email, name, issuer, and subject.
+
+All four OIDC connection values must be supplied together. They are commented
+out by default so local email/password authentication works immediately;
+uncomment all four to enable OIDC. Production secrets should come from a
+managed secret store rather than a committed `.env` file.
+
+## Seed accounts
+
+`pnpm db:seed` requires `SEED_COMMON_PASSWORD` in `server/.env`. The idempotent
+seed creates realistic communities, groups, posts, broadcasts, events,
+channels, direct conversations, and messages, plus at least two users for every
+supported role. All seeded active users accept the same local password; only
+salted hashes are stored.

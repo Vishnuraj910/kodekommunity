@@ -32,10 +32,11 @@ is not an authorization boundary.
 
 | Entry point | Current state | Trust boundary |
 | --- | --- | --- |
-| React UI | Implemented prototype | All browser state and input are untrusted |
+| React UI | Server-backed social client implemented | All browser state and input are untrusted |
 | Service worker and cache | Implemented | Offline content must not mix origins, users, or API data |
-| API | Local Fastify API implemented | Development identity selection is not production authentication |
-| Jobs, webhooks, realtime | Not implemented | Must authenticate and carry tenant context at ingress |
+| API | Cookie-session, OIDC, and local authentication implemented | Every protected request resolves an active database identity |
+| Jobs and webhooks | Not implemented | Must authenticate and carry tenant context at ingress |
+| Realtime | Authenticated participant-scoped WebSockets implemented | Connections and events must retain conversation and tenant context |
 | Database | Local PostgreSQL/Prisma persistence implemented | Production credentials, backups, encryption, and tenant operations remain deployment controls |
 | Object storage and exports | Not implemented | Paths and download authorization require tenant and object checks |
 | Support/admin tools | UI preview only | Production operations require strong auth, attribution, and audit |
@@ -50,8 +51,8 @@ is not an authorization boundary.
 | S4 | Authorization modeled roles but not invited, disabled, or revoked identity state. | Authentication lifecycle | High for production | Authorize an explicit subject and fail closed unless its identity status is `active`. | Negative tests for every inactive status. | Session revocation and token invalidation require the future backend. |
 | S5 | Private message content persisted indefinitely in local storage and there was no user-facing device-data purge. | Privacy / recovery | Medium | Keep messages in session storage with expiry and provide a confirmed local-data purge that also clears owned caches. | Storage expiry and purge tests; browser verification. | Device/browser backups may retain deleted browser data outside application control. |
 | S6 | Dependency ranges allow future drift even though installation is delayed seven days. | Supply chain | Medium | Pin direct dependencies to reviewed lockfile versions and retain strict pnpm release-age and lifecycle-script policy. | Frozen install, lockfile check, test, typecheck, build. | Transitive vulnerabilities still require ongoing advisories and patch review. |
-| S7 | The local API now enforces active identities, object participation, scoped roles, bounded queries, rate limits, idempotency, and attributed audit. It does not yet provide production login, session revocation, jobs, webhooks, exports, or storage authorization. | API / data / operations | Critical production blocker, partially implemented locally | Replace development identity selection with production authentication and implement the remaining ingress and data-movement paths before handling real accounts or private data. | Integration tests cover inactive identities, cross-scope privilege escalation, nonparticipants, retries, and the final-root invariant. Add revoked-session, export, job, webhook, and storage cases with those features. | Remains open until every production ingress uses verified identity and tenant context. |
-| S8 | Server configuration is validated and demo authentication is rejected in production, but production secrets, OAuth flows, and managed secret loading are not implemented. | Secrets / authentication | Critical production blocker | Load secrets only in the server, validate them at startup, use a managed secret store, rotate safely, and never expose secrets through `VITE_` variables. | Startup contract tests and secret-scanning in CI. | Remains open until production authentication and infrastructure exist. |
+| S7 | The API enforces active identities, participant/object checks, scoped roles, bounded queries, rate limits, idempotency, and attributed audit. OIDC Authorization Code with PKCE and revocable hashed sessions are implemented. Jobs, webhooks, exports, and object storage are not. | API / data / operations | High for future integrations | Apply the same authenticated tenant context, idempotency, audit, retention, and object authorization to each new ingress or data-movement path. | Integration tests cover revoked sessions, inactive identities, cross-scope escalation, nonparticipants, retries, and the final-root invariant. | New integrations remain production blockers until their negative cases exist. |
+| S8 | Server configuration is validated, incomplete OIDC configuration is rejected, and demo authentication is rejected in production. Local `.env` loading is suitable only for development. | Secrets / authentication | High for production operations | Load database and OIDC secrets from a managed secret store, restrict secret access, rotate safely, and never expose secrets through `VITE_` variables. | Startup contract tests, deployment IAM review, rotation exercise, and secret scanning in CI. | Managed secret delivery and rotation are deployment responsibilities. |
 
 ## Required production negative cases
 
@@ -84,8 +85,8 @@ The following cases are release gates for the future backend:
 
 ## Production acceptance boundary
 
-Do not process real credentials, private messages, payments, or regulated data
-until S7 and S8 are fully implemented. The production design must additionally define
-region placement, encryption-key ownership, backup access, retention and legal
-deletion, incident response, support impersonation controls, and recovery
-objectives.
+Do not process production private messages, payments, or regulated data until
+managed secret delivery, HTTPS, database/network isolation, backups, retention,
+legal deletion, incident response, support-access controls, monitoring, and
+recovery objectives are configured and tested. Any new job, webhook, export, or
+object-storage path must first satisfy the negative cases above.
