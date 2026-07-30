@@ -1,6 +1,6 @@
 import type { PrismaClient } from "@prisma/client";
 import type { BootstrapResponse } from "../schemas/api.js";
-import { toApiUser } from "./mappers.js";
+import { apiUserSelect, toApiUser } from "./mappers.js";
 
 export const getBootstrap = async (
   prisma: PrismaClient,
@@ -9,7 +9,7 @@ export const getBootstrap = async (
   const [user, communities, events, conversations] = await Promise.all([
     prisma.user.findUniqueOrThrow({
       where: { id: userId },
-      include: { roleAssignments: true },
+      select: apiUserSelect,
     }),
     prisma.community.findMany({
       where: {
@@ -25,7 +25,7 @@ export const getBootstrap = async (
           select: { userId: true },
         },
       },
-      orderBy: { name: "asc" },
+      orderBy: [{ name: "asc" }, { id: "asc" }],
       take: 100,
     }),
     prisma.event.findMany({
@@ -44,7 +44,7 @@ export const getBootstrap = async (
           select: { userId: true },
         },
       },
-      orderBy: { startsAt: "asc" },
+      orderBy: [{ startsAt: "asc" }, { id: "asc" }],
       take: 100,
     }),
     prisma.conversation.findMany({
@@ -57,7 +57,7 @@ export const getBootstrap = async (
           select: { body: true, createdAt: true },
         },
       },
-      orderBy: { updatedAt: "desc" },
+      orderBy: [{ updatedAt: "desc" }, { id: "desc" }],
       take: 100,
     }),
   ]);

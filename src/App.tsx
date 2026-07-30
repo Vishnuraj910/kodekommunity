@@ -102,7 +102,7 @@ import {
   updateRole,
   updateRsvp,
   updateCommunityMembership,
-} from "./api";
+} from "./services/api";
 
 const EIGHT_HOURS_MS = 8 * 60 * 60 * 1_000;
 const ONE_DAY_MS = 24 * 60 * 60 * 1_000;
@@ -2841,6 +2841,7 @@ const initialIdentityStatuses: IdentityStatusDirectory = {
 };
 
 function App(): React.JSX.Element {
+  const [viewerId, setViewerId] = useState("maya");
   const [page, setPage] = useState<Page>("home");
   const [theme, setTheme] = useBrowserState<"light" | "dark">(
     "kommunity-theme",
@@ -2893,11 +2894,11 @@ function App(): React.JSX.Element {
   );
   const [identityStatuses, setIdentityStatuses] =
     useBrowserState<IdentityStatusDirectory>(
-    "kommunity-identity-statuses",
-    initialIdentityStatuses,
-    isIdentityStatusDirectory,
-    "local",
-    ONE_DAY_MS,
+      "kommunity-identity-statuses",
+      initialIdentityStatuses,
+      isIdentityStatusDirectory,
+      "local",
+      ONE_DAY_MS,
     );
   const [activeRoleKey, setActiveRoleKey] = useBrowserState(
     "kommunity-active-role",
@@ -2909,8 +2910,10 @@ function App(): React.JSX.Element {
   const [createOpen, setCreateOpen] = useState(false);
   const [toast, setToast] = useState<ToastState>(null);
   const viewerAssignments =
-    roleDirectory.maya ?? initialRoleDirectory.maya;
-  const viewerStatus = identityStatuses.maya ?? "revoked";
+    roleDirectory[viewerId] ?? initialRoleDirectory[viewerId] ?? [
+      { role: "user", scope: "platform" },
+    ];
+  const viewerStatus = identityStatuses[viewerId] ?? "revoked";
   const canSwitchRoles =
     viewerStatus === "active" &&
     (hasRole(viewerAssignments, "root") ||
@@ -2942,12 +2945,9 @@ function App(): React.JSX.Element {
     let cancelled = false;
     const hydrateFromServer = async () => {
       try {
-        const [bootstrap, access, messagePage] = await Promise.all([
-          loadBootstrap(),
-          loadAccessDirectory(),
-          loadMessages("m1"),
-        ]);
+        const bootstrap = await loadBootstrap();
         if (cancelled) return;
+        setViewerId(bootstrap.user.id);
         setJoinedIds(
           bootstrap.communities
             .filter((community) => community.joined)
@@ -2958,30 +2958,51 @@ function App(): React.JSX.Element {
             .filter((event) => event.going)
             .map((event) => event.id),
         );
-        setRoleDirectory(
-          Object.fromEntries(
-            access.users.map((user) => [user.id, user.assignments]),
-          ),
+        setRoleDirectory((current) => ({
+          ...current,
+          [bootstrap.user.id]: bootstrap.user.assignments,
+        }));
+        setIdentityStatuses((current) => ({
+          ...current,
+          [bootstrap.user.id]: bootstrap.user.status,
+        }));
+
+        const messagePage = await loadMessages("m1").catch(() => null);
+        if (!cancelled && messagePage) {
+          setMessages(
+            messagePage.items.map((message) => ({
+              id: message.id,
+              author: message.author,
+              initials: message.initials,
+              color: message.color,
+              body: message.body,
+              time: new Intl.DateTimeFormat(undefined, {
+                hour: "numeric",
+                minute: "2-digit",
+              }).format(new Date(message.createdAt)),
+              own: message.own,
+            })),
+          );
+        }
+
+        const mayViewAccess = bootstrap.user.assignments.some(
+          (assignment) =>
+            assignment.role === "root" || assignment.role === "maintainer",
         );
-        setIdentityStatuses(
-          Object.fromEntries(
-            access.users.map((user) => [user.id, user.status]),
-          ),
-        );
-        setMessages(
-          messagePage.items.map((message) => ({
-            id: message.id,
-            author: message.author,
-            initials: message.initials,
-            color: message.color,
-            body: message.body,
-            time: new Intl.DateTimeFormat(undefined, {
-              hour: "numeric",
-              minute: "2-digit",
-            }).format(new Date(message.createdAt)),
-            own: message.own,
-          })),
-        );
+        if (mayViewAccess) {
+          const access = await loadAccessDirectory();
+          if (cancelled) return;
+          setRoleDirectory(
+            Object.fromEntries(
+              access.users.map((user) => [user.id, user.assignments]),
+            ),
+          );
+          setIdentityStatuses(
+            Object.fromEntries(
+              access.users.map((user) => [user.id, user.status]),
+            ),
+          );
+        }
       } catch (error) {
         if (!cancelled) {
           showToast(

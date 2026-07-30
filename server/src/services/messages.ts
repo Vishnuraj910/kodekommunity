@@ -3,15 +3,12 @@ import { AppError } from "../domain/errors.js";
 import type { AuthenticatedIdentity } from "../domain/authorization.js";
 import type { MessageResponse } from "../schemas/api.js";
 import { runIdempotently } from "./idempotency.js";
+import { toApiMessage } from "./mappers.js";
 
-const colors = {
-  INK: "ink",
-  BLUE: "blue",
-  CORAL: "coral",
-  ORANGE: "orange",
-  PLUM: "plum",
-  SAGE: "sage",
-  VIOLET: "violet",
+const messageAuthorSelect = {
+  displayName: true,
+  initials: true,
+  avatarTone: true,
 } as const;
 
 const ensureParticipant = async (
@@ -38,7 +35,7 @@ export const listMessages = async (
   await ensureParticipant(prisma, conversationId, identity.id);
   const messages = await prisma.message.findMany({
     where: { conversationId, deletedAt: null },
-    include: { author: true },
+    include: { author: { select: messageAuthorSelect } },
     orderBy: [{ createdAt: "desc" }, { id: "desc" }],
     take: limit + 1,
     ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
@@ -46,19 +43,7 @@ export const listMessages = async (
   const hasMore = messages.length > limit;
   const page = messages.slice(0, limit);
   return {
-    items: page.reverse().map(
-      (message): MessageResponse => ({
-        id: message.id,
-        conversationId: message.conversationId,
-        authorId: message.authorId,
-        author: message.author.displayName,
-        initials: message.author.initials,
-        color: colors[message.author.avatarTone],
-        body: message.body,
-        createdAt: message.createdAt.toISOString(),
-        own: message.authorId === identity.id,
-      }),
-    ),
+    items: page.reverse().map((message) => toApiMessage(message, identity.id)),
     nextCursor: hasMore ? page.at(-1)?.id ?? null : null,
   };
 };
@@ -98,22 +83,12 @@ export const createMessage = async (
       }
       const message = await transaction.message.create({
         data: { conversationId, authorId: identity.id, body },
-        include: { author: true },
+        include: { author: { select: messageAuthorSelect } },
       });
       await transaction.conversation.update({
         where: { id: conversationId },
         data: { updatedAt: new Date() },
       });
-      return {
-        id: message.id,
-        conversationId: message.conversationId,
-        authorId: message.authorId,
-        author: message.author.displayName,
-        initials: message.author.initials,
-        color: colors[message.author.avatarTone],
-        body: message.body,
-        createdAt: message.createdAt.toISOString(),
-        own: true,
-      };
+      return toApiMessage(message, identity.id);
     },
   );

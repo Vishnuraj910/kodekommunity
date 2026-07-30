@@ -1,43 +1,21 @@
+import {
+  identityStatuses,
+  roleAssignmentSchema,
+  roleNames,
+  type ApiRoleAssignment,
+} from "../server/src/schemas/api.ts";
 import { isRecord } from "./validation.ts";
 
-export const roleNames = [
-  "root",
-  "maintainer",
-  "super_admin",
-  "admin",
-  "presenter",
-  "user",
-] as const;
+export { identityStatuses, roleNames };
 
 export type RoleName = (typeof roleNames)[number];
 
-export type RoleAssignment =
-  | {
-      role: "root" | "maintainer" | "user";
-      scope: "platform";
-    }
-  | {
-      role: "super_admin" | "admin";
-      scope: "community";
-      scopeId: string;
-    }
-  | {
-      role: "presenter";
-      scope: "event";
-      scopeId: string;
-    };
+export type RoleAssignment = ApiRoleAssignment;
 
 export type AuthorizationContext = {
   communityId?: string;
   eventId?: string;
 };
-
-export const identityStatuses = [
-  "active",
-  "invited",
-  "disabled",
-  "revoked",
-] as const;
 
 export type IdentityStatus = (typeof identityStatuses)[number];
 
@@ -70,32 +48,8 @@ export const roleAssignmentKey = (assignment: RoleAssignment): string =>
     ? `${assignment.role}:platform`
     : `${assignment.role}:${assignment.scope}:${assignment.scopeId}`;
 
-const isScopeId = (value: unknown): value is string =>
-  typeof value === "string" &&
-  value.length > 0 &&
-  value.length <= 128 &&
-  /^[a-zA-Z0-9_-]+$/.test(value);
-
-export const isRoleAssignment = (
-  value: unknown,
-): value is RoleAssignment => {
-  if (!isRecord(value) || typeof value.role !== "string") return false;
-
-  if (
-    value.role === "root" ||
-    value.role === "maintainer" ||
-    value.role === "user"
-  ) {
-    return value.scope === "platform" && !("scopeId" in value);
-  }
-  if (value.role === "super_admin" || value.role === "admin") {
-    return value.scope === "community" && isScopeId(value.scopeId);
-  }
-  if (value.role === "presenter") {
-    return value.scope === "event" && isScopeId(value.scopeId);
-  }
-  return false;
-};
+export const isRoleAssignment = (value: unknown): value is RoleAssignment =>
+  roleAssignmentSchema.safeParse(value).success;
 
 export const isRoleDirectory = (value: unknown): value is RoleDirectory => {
   if (!isRecord(value)) return false;

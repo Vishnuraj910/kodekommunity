@@ -7,12 +7,22 @@ export const identifierSchema = z
   .regex(/^[a-zA-Z0-9_-]+$/)
   .describe("Stable Kommunity identifier");
 
-export const identityStatusSchema = z.enum([
+export const identityStatuses = [
   "active",
   "invited",
   "disabled",
   "revoked",
-]);
+] as const;
+export const identityStatusSchema = z.enum(identityStatuses);
+
+export const roleNames = [
+  "root",
+  "maintainer",
+  "super_admin",
+  "admin",
+  "presenter",
+  "user",
+] as const;
 
 export const platformRoleAssignmentSchema = z
   .object({
@@ -141,26 +151,26 @@ export const errorSchema = z.object({
   }),
 });
 
-export const idParamsSchema = z.object({
-  id: identifierSchema,
-});
+export const idParamsSchema = z.object({ id: identifierSchema }).strict();
 
-export const conversationParamsSchema = z.object({
-  conversationId: identifierSchema,
-});
+export const conversationParamsSchema = z
+  .object({ conversationId: identifierSchema })
+  .strict();
 
-export const eventParamsSchema = z.object({
-  eventId: identifierSchema,
-});
+export const eventParamsSchema = z
+  .object({ eventId: identifierSchema })
+  .strict();
 
-export const communityParamsSchema = z.object({
-  communityId: identifierSchema,
-});
+export const communityParamsSchema = z
+  .object({ communityId: identifierSchema })
+  .strict();
 
-export const paginationQuerySchema = z.object({
-  cursor: identifierSchema.optional(),
-  limit: z.coerce.number().int().min(1).max(100).default(50),
-});
+export const paginationQuerySchema = z
+  .object({
+    cursor: identifierSchema.optional(),
+    limit: z.coerce.number().int().min(1).max(100).default(50),
+  })
+  .strict();
 
 export const rsvpRequestSchema = z
   .object({

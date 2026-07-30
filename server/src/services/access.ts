@@ -11,7 +11,7 @@ import type {
   RoleChangeRequest,
 } from "../schemas/api.js";
 import { runIdempotently } from "./idempotency.js";
-import { toApiUser } from "./mappers.js";
+import { apiUserSelect, toApiUser } from "./mappers.js";
 
 const toPersistenceAssignment = (
   assignment: ApiRoleAssignment,
@@ -65,7 +65,7 @@ export const getAccessDirectory = async (
     throw new AppError(403, "FORBIDDEN", "Platform maintainer access is required");
   }
   const users = await prisma.user.findMany({
-    include: { roleAssignments: true },
+    select: apiUserSelect,
     orderBy: [{ displayName: "asc" }, { id: "asc" }],
     take: 1000,
   });
@@ -97,7 +97,7 @@ export const changeRole = async (
 
       const target = await transaction.user.findUnique({
         where: { id: request.targetUserId },
-        include: { roleAssignments: true },
+        select: apiUserSelect,
       });
       if (!target) {
         throw new AppError(404, "IDENTITY_NOT_FOUND", "Identity not found");
@@ -186,7 +186,7 @@ export const changeRole = async (
       }
       const updated = await transaction.user.findUniqueOrThrow({
         where: { id: request.targetUserId },
-        include: { roleAssignments: true },
+        select: apiUserSelect,
       });
       return { user: toApiUser(updated) };
     },

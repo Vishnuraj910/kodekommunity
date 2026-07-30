@@ -66,6 +66,14 @@ test("inactive, unprivileged, and nonparticipant access fails closed", async () 
     headers: { "x-kommunity-user-id": "lena" },
   });
   assert.equal(messages.statusCode, 404);
+
+  const unknownQuery = await app.inject({
+    method: "GET",
+    url: "/api/v1/conversations/m1/messages?unexpected=true",
+    headers: { "x-kommunity-user-id": "maya" },
+  });
+  assert.equal(unknownQuery.statusCode, 400);
+  assert.equal(unknownQuery.json().error.code, "VALIDATION_ERROR");
 });
 
 test("message creation replays an idempotent request without duplicating data", async () => {

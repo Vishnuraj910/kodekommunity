@@ -8,7 +8,7 @@ import {
   roleChangeResponseSchema,
   rsvpResponseSchema,
   type ApiRoleAssignment,
-} from "../server/src/schemas/api.ts";
+} from "../../server/src/schemas/api.ts";
 
 const apiRoot = "/api/v1";
 
@@ -31,7 +31,6 @@ const request = async <T>(
     ...init,
     headers: {
       "content-type": "application/json",
-      "x-kommunity-user-id": "maya",
       ...init?.headers,
     },
   });

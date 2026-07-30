@@ -124,7 +124,11 @@ test("live UI authorization preserves identity lifecycle status", async () => {
     "utf8",
   );
 
-  assert.match(app, /const viewerStatus = identityStatuses\.maya \?\? "revoked"/);
+  assert.match(
+    app,
+    /const viewerStatus = identityStatuses\[viewerId\] \?\? "revoked"/,
+  );
+  assert.match(app, /setViewerId\(bootstrap\.user\.id\)/);
   assert.match(app, /status: viewerStatus/);
   assert.doesNotMatch(app, /activeSubject/);
 });

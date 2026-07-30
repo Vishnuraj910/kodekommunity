@@ -63,24 +63,26 @@ enum AvatarTone {
 }
 
 model User {
-  id           String         @id @default(cuid()) @db.VarChar(64)
-  handle       String         @unique @db.VarChar(32)
-  displayName  String         @db.VarChar(120)
-  initials     String         @db.VarChar(8)
-  avatarTone   AvatarTone     @default(INK)
-  email        String?        @unique @db.VarChar(320)
-  status       IdentityStatus @default(INVITED)
-  createdAt    DateTime       @default(now()) @db.Timestamptz(3)
-  updatedAt    DateTime       @updatedAt @db.Timestamptz(3)
+  id          String         @id @default(cuid()) @db.VarChar(64)
+  handle      String         @unique @db.VarChar(32)
+  displayName String         @db.VarChar(120)
+  initials    String         @db.VarChar(8)
+  avatarTone  AvatarTone     @default(INK)
+  email       String?        @unique @db.VarChar(320)
+  status      IdentityStatus @default(INVITED)
+  createdAt   DateTime       @default(now()) @db.Timestamptz(3)
+  updatedAt   DateTime       @updatedAt @db.Timestamptz(3)
 
   roleAssignments         RoleAssignment[]
   memberships             CommunityMember[]
   createdEvents           Event[]                   @relation("EventCreator")
-  rsvps                    EventRsvp[]
+  rsvps                   EventRsvp[]
   conversationMemberships ConversationParticipant[]
-  messages                 Message[]
-  auditEvents              AuditLog[]                @relation("AuditActor")
-  idempotencyRecords       IdempotencyRecord[]
+  messages                Message[]
+  auditEvents             AuditLog[]                @relation("AuditActor")
+  idempotencyRecords      IdempotencyRecord[]
+
+  @@index([displayName, id])
 }
 
 model Community {
@@ -92,11 +94,13 @@ model Community {
   createdAt   DateTime            @default(now()) @db.Timestamptz(3)
   updatedAt   DateTime            @updatedAt @db.Timestamptz(3)
 
-  memberships    CommunityMember[]
+  memberships     CommunityMember[]
   roleAssignments RoleAssignment[]
   events          Event[]
   conversations   Conversation[]
   auditEvents     AuditLog[]
+
+  @@index([name, id])
 }
 
 model CommunityMember {
@@ -145,14 +149,15 @@ model Event {
   createdAt   DateTime @default(now()) @db.Timestamptz(3)
   updatedAt   DateTime @updatedAt @db.Timestamptz(3)
 
-  community      Community       @relation(fields: [communityId], references: [id], onDelete: Cascade)
-  createdBy      User            @relation("EventCreator", fields: [createdById], references: [id], onDelete: Restrict)
+  community       Community        @relation(fields: [communityId], references: [id], onDelete: Cascade)
+  createdBy       User             @relation("EventCreator", fields: [createdById], references: [id], onDelete: Restrict)
   roleAssignments RoleAssignment[]
-  rsvps          EventRsvp[]
-  auditEvents    AuditLog[]
+  rsvps           EventRsvp[]
+  auditEvents     AuditLog[]
 
   @@unique([communityId, slug])
   @@index([communityId, startsAt])
+  @@index([startsAt, id])
 }
 
 model EventRsvp {
@@ -177,17 +182,18 @@ model Conversation {
   createdAt   DateTime         @default(now()) @db.Timestamptz(3)
   updatedAt   DateTime         @updatedAt @db.Timestamptz(3)
 
-  community   Community                @relation(fields: [communityId], references: [id], onDelete: Cascade)
+  community    Community                 @relation(fields: [communityId], references: [id], onDelete: Cascade)
   participants ConversationParticipant[]
   messages     Message[]
 
   @@index([communityId, updatedAt])
+  @@index([updatedAt, id])
 }
 
 model ConversationParticipant {
-  conversationId String   @db.VarChar(64)
-  userId         String   @db.VarChar(64)
-  joinedAt       DateTime @default(now()) @db.Timestamptz(3)
+  conversationId String    @db.VarChar(64)
+  userId         String    @db.VarChar(64)
+  joinedAt       DateTime  @default(now()) @db.Timestamptz(3)
   lastReadAt     DateTime? @db.Timestamptz(3)
 
   conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
@@ -209,7 +215,7 @@ model Message {
   conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
   author       User         @relation(fields: [authorId], references: [id], onDelete: Restrict)
 
-  @@index([conversationId, createdAt])
+  @@index([conversationId, createdAt, id])
   @@index([authorId, createdAt])
 }
 
@@ -225,13 +231,14 @@ model AuditLog {
   metadata       Json
   createdAt      DateTime @default(now()) @db.Timestamptz(3)
 
-  actor    User       @relation("AuditActor", fields: [actorUserId], references: [id], onDelete: Restrict)
+  actor     User       @relation("AuditActor", fields: [actorUserId], references: [id], onDelete: Restrict)
   community Community? @relation(fields: [communityId], references: [id], onDelete: SetNull)
   event     Event?     @relation(fields: [eventId], references: [id], onDelete: SetNull)
 
   @@index([actorUserId, createdAt])
   @@index([communityId, createdAt])
   @@index([targetType, targetId, createdAt])
+  @@index([createdAt, id])
 }
 
 model IdempotencyRecord {
