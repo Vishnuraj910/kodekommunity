@@ -1,16 +1,26 @@
 import fp from "fastify-plugin";
 import { AppError } from "../domain/errors.js";
 import { toApiRoleAssignment, toApiIdentityStatus } from "../services/mappers.js";
+import { resolveSession } from "../services/sessions.js";
 
 export const authPlugin = fp(
   async (fastify) => {
     fastify.decorateRequest("auth");
     fastify.decorate("authenticate", async (request) => {
+      const identity = await resolveSession(
+        fastify,
+        request.cookies[fastify.config.SESSION_COOKIE_NAME],
+      );
+      if (identity) {
+        request.auth = identity;
+        return;
+      }
+
       if (!fastify.config.ALLOW_DEMO_AUTH) {
         throw new AppError(
           401,
           "AUTHENTICATION_REQUIRED",
-          "A production authentication provider is required",
+          "Authentication required",
         );
       }
 

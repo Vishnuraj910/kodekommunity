@@ -20,10 +20,31 @@ export const openApiPlugin = fp(
         servers: [{ url: "http://127.0.0.1:8787" }],
         tags: [
           { name: "Health", description: "Liveness and database readiness" },
+          {
+            name: "Authentication",
+            description:
+              "Preferred OIDC and secondary local credential sessions",
+          },
           { name: "Bootstrap", description: "Authenticated client bootstrap" },
           {
             name: "Communities",
             description: "Tenant-aware community membership",
+          },
+          {
+            name: "Groups",
+            description: "Tenant-scoped group discovery and administration",
+          },
+          {
+            name: "Posts",
+            description: "Member-authored community and group feeds",
+          },
+          {
+            name: "Broadcasts",
+            description: "Scheduled community announcements",
+          },
+          {
+            name: "Channels",
+            description: "Participant-scoped community and group chat channels",
           },
           { name: "Events", description: "Tenant-aware events and RSVP state" },
           {
@@ -37,6 +58,13 @@ export const openApiPlugin = fp(
         ],
         components: {
           securitySchemes: {
+            CookieSession: {
+              type: "apiKey",
+              in: "cookie",
+              name: "kommunity_session",
+              description:
+                "Opaque server-side session. The cookie is HttpOnly and SameSite=Lax.",
+            },
             DemoUser: {
               type: "apiKey",
               in: "header",

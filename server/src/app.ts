@@ -1,4 +1,6 @@
 import cors from "@fastify/cors";
+import cookie from "@fastify/cookie";
+import websocket from "@fastify/websocket";
 import rateLimit from "@fastify/rate-limit";
 import Fastify from "fastify";
 import {
@@ -12,13 +14,31 @@ import { authPlugin } from "./plugins/auth.js";
 import { openApiPlugin } from "./plugins/openapi.js";
 import { prismaPlugin } from "./plugins/prisma.js";
 import { accessRoutes } from "./routes/access.js";
+import { authRoutes } from "./routes/auth.js";
+import { broadcastRoutes } from "./routes/broadcasts.js";
+import { channelRoutes } from "./routes/channels.js";
 import { bootstrapRoutes } from "./routes/bootstrap.js";
 import { communityRoutes } from "./routes/communities.js";
+import { conversationRoutes } from "./routes/conversations.js";
 import { eventRoutes } from "./routes/events.js";
 import { healthRoutes } from "./routes/health.js";
 import { messageRoutes } from "./routes/messages.js";
+import { liveMessageRoutes } from "./routes/live-messages.js";
+import { postRoutes } from "./routes/posts.js";
+import {
+  createOidcClient,
+  type OidcClient,
+} from "./services/oidc-client.js";
+import { MessageHub } from "./services/message-hub.js";
 
-export const buildApp = async (config: AppConfig) => {
+type AppDependencies = {
+  oidcClient?: OidcClient;
+};
+
+export const buildApp = async (
+  config: AppConfig,
+  dependencies: AppDependencies = {},
+) => {
   const app = Fastify({
     logger: { level: config.LOG_LEVEL },
     bodyLimit: 64 * 1024,
@@ -27,12 +47,43 @@ export const buildApp = async (config: AppConfig) => {
   app.setValidatorCompiler(validatorCompiler);
   app.setSerializerCompiler(serializerCompiler);
   app.decorate("config", config);
+  app.decorate(
+    "oidcClient",
+    dependencies.oidcClient ?? createOidcClient(config),
+  );
+  app.decorate("messageHub", new MessageHub());
+  const clientOrigin = new URL(config.CLIENT_ORIGIN).origin;
+  app.addHook("onRequest", async (request) => {
+    const origin = request.headers.origin;
+    const changesState = !["GET", "HEAD", "OPTIONS"].includes(request.method);
+    const upgradesConnection =
+      request.headers.upgrade?.toLowerCase() === "websocket";
+    if (
+      origin &&
+      (changesState || upgradesConnection) &&
+      origin !== clientOrigin
+    ) {
+      throw new AppError(
+        403,
+        "ORIGIN_NOT_ALLOWED",
+        "The request origin is not allowed",
+      );
+    }
+  });
 
+  await app.register(websocket, {
+    options: {
+      maxPayload: 16 * 1024,
+      perMessageDeflate: false,
+    },
+  });
   await app.register(cors, {
     origin: config.CLIENT_ORIGIN,
+    credentials: true,
     methods: ["GET", "POST", "PUT"],
     allowedHeaders: ["content-type", "idempotency-key", "x-kommunity-user-id"],
   });
+  await app.register(cookie);
   await app.register(rateLimit, {
     max: 120,
     timeWindow: "1 minute",
@@ -102,10 +153,16 @@ export const buildApp = async (config: AppConfig) => {
   });
 
   await app.register(healthRoutes, { prefix: "/api/v1" });
+  await app.register(authRoutes, { prefix: "/api/v1" });
+  await app.register(broadcastRoutes, { prefix: "/api/v1" });
+  await app.register(channelRoutes, { prefix: "/api/v1" });
   await app.register(bootstrapRoutes, { prefix: "/api/v1" });
   await app.register(communityRoutes, { prefix: "/api/v1" });
+  await app.register(conversationRoutes, { prefix: "/api/v1" });
   await app.register(eventRoutes, { prefix: "/api/v1" });
   await app.register(messageRoutes, { prefix: "/api/v1" });
+  await app.register(liveMessageRoutes, { prefix: "/api/v1" });
+  await app.register(postRoutes, { prefix: "/api/v1" });
   await app.register(accessRoutes, { prefix: "/api/v1" });
 
   await app.ready();

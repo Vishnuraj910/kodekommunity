@@ -19,8 +19,10 @@
     "db:status": "corepack pnpm --dir server db:status",
     "preview": "vite preview",
     "security:audit": "pnpm audit --prod",
-    "test": "node --experimental-strip-types --test tests/*.test.mjs",
-    "test:all": "corepack pnpm run test && corepack pnpm --dir server test",
+    "test": "node --experimental-strip-types --test tests/*.test.mjs && vitest run --config vitest.frontend.config.ts",
+    "test:backend": "vitest run --config vitest.backend.config.ts",
+    "test:coverage": "vitest run --config vitest.frontend.config.ts --coverage && vitest run --config vitest.backend.config.ts --coverage",
+    "test:all": "corepack pnpm run test && corepack pnpm run test:backend",
     "typecheck": "tsc -b",
     "typecheck:all": "corepack pnpm run typecheck && corepack pnpm --dir server typecheck"
   },
@@ -32,10 +34,16 @@
     "zod": "4.4.3"
   },
   "devDependencies": {
+    "@testing-library/jest-dom": "7.0.0",
+    "@testing-library/react": "16.3.2",
+    "@testing-library/user-event": "14.6.1",
     "@types/react": "19.2.17",
     "@types/react-dom": "19.2.3",
     "@vitejs/plugin-react": "4.7.0",
+    "@vitest/coverage-v8": "4.1.10",
+    "jsdom": "29.1.1",
     "typescript": "5.7.3",
-    "vite": "6.4.3"
+    "vite": "6.4.3",
+    "vitest": "4.1.10"
   }
 }

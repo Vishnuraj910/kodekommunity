@@ -23,6 +23,18 @@ const environmentSchema = z
         "DATABASE_URL must use PostgreSQL",
       ),
     CLIENT_ORIGIN: z.string().url().default("http://127.0.0.1:4173"),
+    SESSION_COOKIE_NAME: z
+      .string()
+      .min(1)
+      .max(64)
+      .regex(/^[a-zA-Z0-9_-]+$/)
+      .default("kommunity_session"),
+    SESSION_TTL_HOURS: z.coerce.number().int().min(1).max(168).default(12),
+    OIDC_ISSUER_URL: z.string().url().optional(),
+    OIDC_CLIENT_ID: z.string().min(1).max(255).optional(),
+    OIDC_CLIENT_SECRET: z.string().min(1).max(2000).optional(),
+    OIDC_REDIRECT_URI: z.string().url().optional(),
+    OIDC_SCOPES: z.string().default("openid profile email"),
     ALLOW_DEMO_AUTH: booleanFromEnvironment.default(false),
     DEMO_USER_ID: z
       .string()
@@ -47,6 +59,23 @@ const environmentSchema = z
         code: "custom",
         message: "DEMO_USER_ID is required when demo authentication is enabled",
         path: ["DEMO_USER_ID"],
+      });
+    }
+    const oidcValues = [
+      value.OIDC_ISSUER_URL,
+      value.OIDC_CLIENT_ID,
+      value.OIDC_CLIENT_SECRET,
+      value.OIDC_REDIRECT_URI,
+    ];
+    if (
+      oidcValues.some((entry) => entry !== undefined) &&
+      oidcValues.some((entry) => entry === undefined)
+    ) {
+      context.addIssue({
+        code: "custom",
+        message:
+          "OIDC_ISSUER_URL, OIDC_CLIENT_ID, OIDC_CLIENT_SECRET, and OIDC_REDIRECT_URI must be configured together",
+        path: ["OIDC_ISSUER_URL"],
       });
     }
   });

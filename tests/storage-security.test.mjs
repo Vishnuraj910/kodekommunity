@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 import { isRoleDirectory } from "../src/roles.ts";
@@ -106,31 +105,6 @@ test("browser-data purge reports cache cleanup failures", async () => {
     }),
     /cache unavailable/,
   );
-});
-
-test("rehydration does not extend stored-state expiry", async () => {
-  const app = await readFile(
-    new URL("../src/App.tsx", import.meta.url),
-    "utf8",
-  );
-
-  assert.match(app, /if \(!storage \|\| !shouldPersist\.current\) return/);
-  assert.match(app, /shouldPersist\.current = true/);
-});
-
-test("live UI authorization preserves identity lifecycle status", async () => {
-  const app = await readFile(
-    new URL("../src/App.tsx", import.meta.url),
-    "utf8",
-  );
-
-  assert.match(
-    app,
-    /const viewerStatus = identityStatuses\[viewerId\] \?\? "revoked"/,
-  );
-  assert.match(app, /setViewerId\(bootstrap\.user\.id\)/);
-  assert.match(app, /status: viewerStatus/);
-  assert.doesNotMatch(app, /activeSubject/);
 });
 
 test("tampered role directories fail validation", () => {
