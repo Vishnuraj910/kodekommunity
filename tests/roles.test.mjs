@@ -4,7 +4,7 @@ import test from "node:test";
 import {
   can,
   roleAssignmentKey,
-  toggleRole,
+  toggleAssignment,
 } from "../src/roles.ts";
 
 test("scoped permissions fail closed without matching context", () => {
@@ -41,7 +41,11 @@ test("toggling a scoped role preserves grants for other scopes", () => {
     { role: "admin", scope: "community", scopeId: "c2" },
   ];
 
-  const result = toggleRole(assignments, "admin");
+  const result = toggleAssignment(assignments, {
+    role: "admin",
+    scope: "community",
+    scopeId: "c1",
+  });
 
   assert.deepEqual(result.map(roleAssignmentKey), [
     "user:platform",

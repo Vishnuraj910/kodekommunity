@@ -28,8 +28,8 @@ without changing the user's stored assignments.
 
 ## Run locally
 
-Requirements: Node.js 22.6+ and pnpm 10.16+ (the repository declares pnpm
-10.28.2 for reproducibility).
+Requirements: Node.js 22.6+ and pnpm 11+ (the repository declares pnpm 11.15.1,
+published more than seven days before adoption, for reproducibility).
 
 ```bash
 pnpm install

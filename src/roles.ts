@@ -175,12 +175,11 @@ export const assignmentScope = (assignment: RoleAssignment): string => {
     : `Event ${assignment.scopeId}`;
 };
 
-export const toggleRole = (
+export const toggleAssignment = (
   assignments: RoleAssignment[],
-  role: RoleName,
+  target: RoleAssignment,
 ): RoleAssignment[] => {
-  if (role === "user") return assignments;
-  const target = defaultAssignmentFor(role);
+  if (target.role === "user") return assignments;
   const targetKey = roleAssignmentKey(target);
   const exists = assignments.some(
     (assignment) => roleAssignmentKey(assignment) === targetKey,

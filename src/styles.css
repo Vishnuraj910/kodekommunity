@@ -4874,6 +4874,45 @@ select {
   box-shadow: none;
 }
 
+.primary-nav button b,
+.conversation-copy b,
+.bottom-nav > button > i {
+  color: var(--bg);
+  background: var(--ink);
+}
+
+.search-field:focus-within,
+.message-search:focus-within,
+.inline-search:focus-within,
+.message-composer:focus-within,
+.handle-field:focus-within,
+.modal textarea:focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+
+.community-cover,
+.group-card-header,
+.event-card-art {
+  color: var(--text);
+  background: var(--surface-soft);
+  border-color: var(--line);
+}
+
+.community-cover > span,
+.group-card-header > span,
+.group-card-header > i,
+.event-card-art .event-category,
+.event-card-art > strong {
+  color: var(--text);
+}
+
+.group-card-header > span,
+.group-card-header > i,
+.event-category {
+  border-color: var(--line-strong);
+}
+
 @media (max-width: 768px) {
   .home-layout,
   .wide-page,

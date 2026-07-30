@@ -70,7 +70,7 @@ import {
   roleAssignmentKey,
   roleDefinitions,
   roleNames,
-  toggleRole,
+  toggleAssignment,
   type RoleAssignment,
   type RoleName,
 } from "./roles";
@@ -436,7 +436,11 @@ function AppHeader({
       <div className="page-actions">
         {actions}
         {onNotify && (
-          <button className="notification-button" onClick={onNotify}>
+          <button
+            aria-label="Open notifications"
+            className="notification-button"
+            onClick={onNotify}
+          >
             <Bell size={19} />
             <span />
           </button>
@@ -624,6 +628,7 @@ function HomePage({
         </div>
         <footer className="post-actions">
           <button
+            aria-label={`${liked.includes("post-1") ? "Unlike" : "Like"} Priya Nair's post`}
             className={liked.includes("post-1") ? "active" : ""}
             onClick={() => toggleLike("post-1")}
           >
@@ -633,10 +638,11 @@ function HomePage({
             />
             {liked.includes("post-1") ? 25 : 24}
           </button>
-          <button>
+          <button aria-label="View 8 comments on Priya Nair's post">
             <MessageSquare size={18} /> 8
           </button>
           <button
+            aria-label={`${savedPosts.includes("post-1") ? "Remove Priya Nair's post from saved items" : "Save Priya Nair's post"}`}
             className={`save-action ${
               savedPosts.includes("post-1") ? "active" : ""
             }`}
@@ -715,6 +721,7 @@ function HomePage({
         </div>
         <footer className="post-actions">
           <button
+            aria-label={`${liked.includes("post-2") ? "Unlike" : "Like"} Jon Bell's post`}
             className={liked.includes("post-2") ? "active" : ""}
             onClick={() => toggleLike("post-2")}
           >
@@ -724,10 +731,11 @@ function HomePage({
             />
             {liked.includes("post-2") ? 48 : 47}
           </button>
-          <button>
+          <button aria-label="View 12 comments on Jon Bell's post">
             <MessageSquare size={18} /> 12
           </button>
           <button
+            aria-label={`${savedPosts.includes("post-2") ? "Remove Jon Bell's post from saved items" : "Save Jon Bell's post"}`}
             className={`save-action ${
               savedPosts.includes("post-2") ? "active" : ""
             }`}
@@ -1709,7 +1717,7 @@ function ConnectionsPage({
                 <div>
                   <h3>{person.name}</h3>
                   <span>@{person.handle}</span>
-                  <p>{person.role}</p>
+                  <p>{person.headline}</p>
                 </div>
                 <Button variant="secondary" size="sm" icon={MessageCircle}>
                   Message
@@ -2201,6 +2209,19 @@ const accessMembers = [
   },
 ];
 
+const roleAssignmentOptions: RoleAssignment[] = [
+  { role: "root", scope: "platform" },
+  { role: "maintainer", scope: "platform" },
+  { role: "super_admin", scope: "community", scopeId: "c1" },
+  { role: "super_admin", scope: "community", scopeId: "c2" },
+  { role: "super_admin", scope: "community", scopeId: "c3" },
+  { role: "admin", scope: "community", scopeId: "c1" },
+  { role: "admin", scope: "community", scopeId: "c2" },
+  { role: "admin", scope: "community", scopeId: "c3" },
+  { role: "presenter", scope: "event", scopeId: "e1" },
+  { role: "user", scope: "platform" },
+];
+
 function RoleIcon({ role }: { role: RoleName }): React.JSX.Element {
   if (role === "root") return <Crown size={16} />;
   if (role === "maintainer") return <Wrench size={16} />;
@@ -2315,11 +2336,14 @@ function FloatingRoleSwitcher({
 function AccessPage({
   directory,
   viewerAssignments,
-  onToggleRole,
+  onToggleAssignment,
 }: {
   directory: RoleDirectory;
   viewerAssignments: RoleAssignment[];
-  onToggleRole: (userId: string, role: RoleName) => void;
+  onToggleAssignment: (
+    userId: string,
+    assignment: RoleAssignment,
+  ) => void;
 }): React.JSX.Element {
   const [query, setQuery] = useState("");
   const [roleFilter, setRoleFilter] = useState<RoleName | "all">("all");
@@ -2440,40 +2464,38 @@ function AccessPage({
                 <b>{assignments.length} roles</b>
               </div>
               <div className="role-assignment-grid">
-                {roleNames.map((role) => {
-                  const assigned = hasRole(assignments, role);
+                {roleAssignmentOptions.map((target) => {
+                  const targetKey = roleAssignmentKey(target);
+                  const assigned = assignments.some(
+                    (assignment) =>
+                      roleAssignmentKey(assignment) === targetKey,
+                  );
                   const lastRoot =
-                    role === "root" && assigned && rootCount === 1;
+                    target.role === "root" && assigned && rootCount === 1;
                   const disabled =
-                    !canEdit || role === "user" || lastRoot;
-                  const definition = roleDefinitions[role];
+                    !canEdit || target.role === "user" || lastRoot;
+                  const definition = roleDefinitions[target.role];
                   return (
                     <button
                       className={`${assigned ? "assigned" : ""} role-${definition.tone}`}
                       disabled={disabled}
-                      key={role}
-                      onClick={() => onToggleRole(member.id, role)}
+                      key={targetKey}
+                      onClick={() =>
+                        onToggleAssignment(member.id, target)
+                      }
                       title={
                         lastRoot
                           ? "The final root assignment cannot be removed"
-                          : role === "user"
+                          : target.role === "user"
                             ? "User is the required baseline role"
                             : `${assigned ? "Remove" : "Assign"} ${definition.label}`
                       }
                     >
                       <span>
-                        <RoleIcon role={role} />
+                        <RoleIcon role={target.role} />
                         {definition.label}
                       </span>
-                      <small>
-                        {assigned
-                          ? assignmentScope(
-                              assignments.find(
-                                (assignment) => assignment.role === role,
-                              )!,
-                            )
-                          : definition.scopeLabel}
-                      </small>
+                      <small>{assignmentScope(target)}</small>
                       {assigned ? <Check size={15} /> : <Plus size={15} />}
                     </button>
                   );
@@ -2926,7 +2948,11 @@ function App(): React.JSX.Element {
     ]);
   };
 
-  const updateMemberRole = (userId: string, role: RoleName) => {
+  const updateMemberRole = (
+    userId: string,
+    target: RoleAssignment,
+  ) => {
+    const role = target.role;
     if (!can(effectiveViewerAssignments, "platform:manage")) {
       showToast("Only root can change role assignments");
       return;
@@ -2947,9 +2973,12 @@ function App(): React.JSX.Element {
     }
     setRoleDirectory((current) => ({
       ...current,
-      [userId]: toggleRole(memberAssignments, role),
+      [userId]: toggleAssignment(memberAssignments, target),
     }));
-    const adding = !hasRole(memberAssignments, role);
+    const targetKey = roleAssignmentKey(target);
+    const adding = !memberAssignments.some(
+      (assignment) => roleAssignmentKey(assignment) === targetKey,
+    );
     showToast(
       `${roleDefinitions[role].label} ${adding ? "assigned" : "removed"}`,
     );
@@ -3036,7 +3065,7 @@ function App(): React.JSX.Element {
           <AccessPage
             directory={roleDirectory}
             viewerAssignments={effectiveViewerAssignments}
-            onToggleRole={updateMemberRole}
+            onToggleAssignment={updateMemberRole}
           />
         );
       case "profile":

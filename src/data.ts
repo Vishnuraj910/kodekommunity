@@ -3,7 +3,7 @@ export type Person = {
   name: string;
   handle: string;
   initials: string;
-  role: string;
+  headline: string;
   color: string;
   mutual?: number;
 };
@@ -30,7 +30,7 @@ export const people: Person[] = [
     name: "Lena Ortiz",
     handle: "lena-ortiz-designs",
     initials: "LO",
-    role: "Product designer · Design Circle",
+    headline: "Product designer · Design Circle",
     color: "coral",
     mutual: 6,
   },
@@ -39,7 +39,7 @@ export const people: Person[] = [
     name: "Jon Bell",
     handle: "jon-bell-builds",
     initials: "JB",
-    role: "Frontend engineer · Web Builders",
+    headline: "Frontend engineer · Web Builders",
     color: "blue",
     mutual: 4,
   },
@@ -48,7 +48,7 @@ export const people: Person[] = [
     name: "Priya Nair",
     handle: "priya-nair-learns",
     initials: "PN",
-    role: "Community builder · KodeKommunity",
+    headline: "Community builder · KodeKommunity",
     color: "plum",
     mutual: 11,
   },
@@ -57,7 +57,7 @@ export const people: Person[] = [
     name: "Omar Haddad",
     handle: "omar-haddad-ships",
     initials: "OH",
-    role: "Indie maker · Dubai",
+    headline: "Indie maker · Dubai",
     color: "amber",
     mutual: 3,
   },
