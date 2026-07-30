@@ -39,8 +39,10 @@ pnpm dev
 Open [http://127.0.0.1:4173](http://127.0.0.1:4173).
 
 No environment variables or external services are needed for the local
-experience. Interactive state is stored in the browser and can be reset from
-DevTools by clearing local storage.
+experience. Preferences and non-sensitive preview state use versioned,
+validated local storage. Private message previews use session storage and
+expire after eight hours. Settings provides a confirmed action to remove all
+Kommunity-owned browser storage and offline caches.
 
 Role editing in this standalone build is a local permission preview, not a
 security boundary. The production architecture described in `AGENTS.md`

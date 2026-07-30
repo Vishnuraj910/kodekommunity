@@ -3,6 +3,7 @@ import test from "node:test";
 
 import { isRoleDirectory } from "../src/roles.ts";
 import {
+  clearStoredNamespace,
   isStringArray,
   readStoredState,
   writeStoredState,
@@ -13,6 +14,14 @@ class MemoryStorage {
 
   getItem(key) {
     return this.values.get(key) ?? null;
+  }
+
+  get length() {
+    return this.values.size;
+  }
+
+  key(index) {
+    return [...this.values.keys()][index] ?? null;
   }
 
   removeItem(key) {
@@ -39,6 +48,18 @@ test("malformed or expired browser state is removed", () => {
     ["safe"],
   );
   assert.equal(storage.getItem("expired"), null);
+});
+
+test("device-data purge removes only Kommunity-owned values", () => {
+  const storage = new MemoryStorage();
+  storage.setItem("kommunity-theme", "dark");
+  storage.setItem("kommunity-messages", "private");
+  storage.setItem("another-app-session", "preserve");
+
+  assert.equal(clearStoredNamespace(storage), 2);
+  assert.equal(storage.getItem("kommunity-theme"), null);
+  assert.equal(storage.getItem("kommunity-messages"), null);
+  assert.equal(storage.getItem("another-app-session"), "preserve");
 });
 
 test("tampered role directories fail validation", () => {

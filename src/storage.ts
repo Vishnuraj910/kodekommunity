@@ -3,6 +3,9 @@ export type StorageAdapter = Pick<
   "getItem" | "removeItem" | "setItem"
 >;
 
+export type ClearableStorageAdapter = StorageAdapter &
+  Pick<Storage, "key" | "length">;
+
 export type StateValidator<T> = (value: unknown) => value is T;
 
 type StoredState<T> = {
@@ -13,6 +16,8 @@ type StoredState<T> = {
 
 const STORAGE_VERSION = 1;
 const MAX_STORED_BYTES = 1_000_000;
+const APP_STORAGE_PREFIX = "kommunity-";
+const APP_CACHE_PREFIX = "kommunity-shell-";
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
@@ -89,3 +94,30 @@ export const isStringArray = (value: unknown): value is string[] =>
   Array.isArray(value) &&
   value.length <= 1_000 &&
   value.every((item) => typeof item === "string" && item.length <= 256);
+
+export const clearStoredNamespace = (
+  storage: ClearableStorageAdapter,
+  prefix = APP_STORAGE_PREFIX,
+): number => {
+  const keys: string[] = [];
+  for (let index = 0; index < storage.length; index += 1) {
+    const key = storage.key(index);
+    if (key?.startsWith(prefix)) keys.push(key);
+  }
+  keys.forEach((key) => storage.removeItem(key));
+  return keys.length;
+};
+
+export const clearKommunityBrowserData = async (): Promise<void> => {
+  clearStoredNamespace(window.localStorage);
+  clearStoredNamespace(window.sessionStorage);
+
+  if ("caches" in window) {
+    const keys = await window.caches.keys();
+    await Promise.all(
+      keys
+        .filter((key) => key.startsWith(APP_CACHE_PREFIX))
+        .map((key) => window.caches.delete(key)),
+    );
+  }
+};

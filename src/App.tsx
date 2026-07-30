@@ -81,6 +81,7 @@ import {
   type RoleName,
 } from "./roles";
 import {
+  clearKommunityBrowserData,
   isBoolean,
   isString,
   isStringArray,
@@ -88,6 +89,9 @@ import {
   type StateValidator,
   writeStoredState,
 } from "./storage";
+
+const EIGHT_HOURS_MS = 8 * 60 * 60 * 1_000;
+const ONE_DAY_MS = 24 * 60 * 60 * 1_000;
 
 type Page =
   | "home"
@@ -2037,12 +2041,14 @@ function SettingsPage({
   onTheme,
   onToast,
   assignments,
+  onClearLocalData,
   onOpenAccess,
 }: {
   theme: "light" | "dark";
   onTheme: (theme: "light" | "dark") => void;
   onToast: (message: string) => void;
   assignments: RoleAssignment[];
+  onClearLocalData: () => void;
   onOpenAccess: () => void;
 }): React.JSX.Element {
   const [discoverable, setDiscoverable] = useState(true);
@@ -2192,6 +2198,24 @@ function SettingsPage({
               onClick={() => onToast("Data export is being prepared")}
             >
               Export my data
+            </Button>
+          </section>
+          <section className="settings-section">
+            <div>
+              <h2>
+                <LogOut size={18} /> Data on this device
+              </h2>
+              <p>
+                Remove saved preview state, session messages, and Kommunity
+                offline caches from this browser.
+              </p>
+            </div>
+            <Button
+              variant="danger"
+              size="sm"
+              onClick={onClearLocalData}
+            >
+              Clear local data
             </Button>
           </section>
           <Button onClick={() => onToast("Settings saved")}>Save changes</Button>
@@ -2823,16 +2847,22 @@ function App(): React.JSX.Element {
     "kommunity-messages",
     initialMessages,
     isMessageArray,
+    "session",
+    EIGHT_HOURS_MS,
   );
   const [roleDirectory, setRoleDirectory] = useBrowserState<RoleDirectory>(
     "kommunity-role-directory",
     initialRoleDirectory,
     isRoleDirectory,
+    "local",
+    ONE_DAY_MS,
   );
   const [activeRoleKey, setActiveRoleKey] = useBrowserState(
     "kommunity-active-role",
     "all",
     isString,
+    "local",
+    ONE_DAY_MS,
   );
   const [createOpen, setCreateOpen] = useState(false);
   const [toast, setToast] = useState<ToastState>(null);
@@ -3017,6 +3047,16 @@ function App(): React.JSX.Element {
     );
   };
 
+  const clearLocalData = async () => {
+    const confirmed = window.confirm(
+      "Clear Kommunity data from this browser? This removes saved preview state, session messages, and offline caches.",
+    );
+    if (!confirmed) return;
+
+    await clearKommunityBrowserData();
+    window.location.reload();
+  };
+
   const pageContent = useMemo(() => {
     switch (page) {
       case "home":
@@ -3116,6 +3156,7 @@ function App(): React.JSX.Element {
             onTheme={setTheme}
             onToast={showToast}
             assignments={effectiveViewerAssignments}
+            onClearLocalData={() => void clearLocalData()}
             onOpenAccess={() => navigate("access")}
           />
         );
