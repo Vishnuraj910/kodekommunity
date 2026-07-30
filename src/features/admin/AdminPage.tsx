@@ -10,6 +10,7 @@ import type {
   AdminPostUpdate,
   AdminUserCreate,
   AdminUserUpdate,
+  ApiRoleAssignment,
 } from "../../../server/src/schemas/api";
 import { Input } from "../../components/ui/input";
 import {
@@ -20,6 +21,12 @@ import {
   SelectValue,
 } from "../../components/ui/select";
 import { Textarea } from "../../components/ui/textarea";
+import {
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+} from "../../components/ui/tabs";
 
 type AdminSection = "users" | "events" | "posts" | "groups";
 
@@ -28,6 +35,11 @@ type AdminPageProps = {
   createUser: (input: AdminUserCreate) => Promise<void>;
   updateUser: (userId: string, input: AdminUserUpdate) => Promise<void>;
   deleteUser: (userId: string) => Promise<void>;
+  updateRole: (
+    userId: string,
+    action: "grant" | "revoke",
+    assignment: ApiRoleAssignment,
+  ) => Promise<void>;
   createEvent: (input: AdminEventCreate) => Promise<void>;
   updateEvent: (eventId: string, input: AdminEventUpdate) => Promise<void>;
   deleteEvent: (eventId: string) => Promise<void>;
@@ -50,6 +62,162 @@ const sectionOptions = [
   { id: "posts", label: "Posts", icon: FileText },
   { id: "groups", label: "Groups", icon: UsersRound },
 ] as const;
+
+const roleOptions = [
+  { value: "root", label: "Root" },
+  { value: "maintainer", label: "Maintainer" },
+  { value: "super_admin", label: "Super admin" },
+  { value: "admin", label: "Admin" },
+  { value: "presenter", label: "Presenter" },
+] as const;
+
+const assignmentKey = (assignment: ApiRoleAssignment) =>
+  `${assignment.role}-${assignment.scope}-${
+    assignment.scope === "platform" ? "platform" : assignment.scopeId
+  }`;
+
+function UserRoleEditor({
+  overview,
+  pending,
+  perform,
+  updateRole,
+  user,
+}: {
+  overview: AdminOverview;
+  pending: boolean;
+  perform: (operation: () => Promise<void>) => Promise<void>;
+  updateRole: AdminPageProps["updateRole"];
+  user: AdminOverview["users"][number];
+}): React.JSX.Element {
+  const [role, setRole] =
+    useState<(typeof roleOptions)[number]["value"]>("maintainer");
+  const [scopeId, setScopeId] = useState("");
+  const assignment: ApiRoleAssignment =
+    role === "super_admin" || role === "admin"
+      ? {
+          role,
+          scope: "community",
+          scopeId: scopeId || overview.communities[0]?.id || "",
+        }
+      : role === "presenter"
+        ? {
+            role,
+            scope: "event",
+            scopeId: scopeId || overview.events[0]?.id || "",
+          }
+        : { role, scope: "platform" };
+
+  return (
+    <section
+      aria-label={`Roles for ${user.displayName}`}
+      className="admin-role-editor"
+    >
+      <div className="admin-role-summary">
+        {user.assignments.map((current) => (
+          <span key={assignmentKey(current)}>
+            {current.role}
+            {current.scope === "platform" ? "" : ` · ${current.scopeId}`}
+            {current.role !== "user" && (
+              <button
+                aria-label={`Revoke ${current.role} from ${user.displayName}`}
+                disabled={pending}
+                onClick={() =>
+                  void perform(() => updateRole(user.id, "revoke", current))
+                }
+                type="button"
+              >
+                Remove
+              </button>
+            )}
+          </span>
+        ))}
+      </div>
+      <div className="admin-role-controls">
+        <label className="ui-field">
+          <span id={`role-${user.id}-label`}>Role for {user.displayName}</span>
+          <Select
+            onValueChange={(nextRole) => {
+              setRole(nextRole as (typeof roleOptions)[number]["value"]);
+              setScopeId("");
+            }}
+            value={role}
+          >
+            <SelectTrigger
+              aria-labelledby={`role-${user.id}-label`}
+              id={`role-${user.id}`}
+            >
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {roleOptions.map((option) => (
+                <SelectItem key={option.value} value={option.value}>
+                  {option.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </label>
+        {(role === "super_admin" || role === "admin") && (
+          <label className="ui-field">
+            <span id={`role-scope-${user.id}-label`}>Community</span>
+            <Select
+              onValueChange={setScopeId}
+              value={scopeId || overview.communities[0]?.id}
+            >
+              <SelectTrigger
+                aria-labelledby={`role-scope-${user.id}-label`}
+              >
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {overview.communities.map((community) => (
+                  <SelectItem key={community.id} value={community.id}>
+                    {community.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </label>
+        )}
+        {role === "presenter" && (
+          <label className="ui-field">
+            <span id={`role-event-${user.id}-label`}>Event</span>
+            <Select
+              onValueChange={setScopeId}
+              value={scopeId || overview.events[0]?.id}
+            >
+              <SelectTrigger aria-labelledby={`role-event-${user.id}-label`}>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {overview.events.map((event) => (
+                  <SelectItem key={event.id} value={event.id}>
+                    {event.title}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </label>
+        )}
+        <button
+          aria-label={`Grant role to ${user.displayName}`}
+          disabled={
+            pending ||
+            ((assignment.scope === "community" ||
+              assignment.scope === "event") &&
+              !assignment.scopeId)
+          }
+          onClick={() =>
+            void perform(() => updateRole(user.id, "grant", assignment))
+          }
+          type="button"
+        >
+          Grant role
+        </button>
+      </div>
+    </section>
+  );
+}
 
 function AdminSelect({
   defaultValue,
@@ -88,6 +256,7 @@ export function AdminPage({
   createUser,
   updateUser,
   deleteUser,
+  updateRole,
   createEvent,
   updateEvent,
   deleteEvent,
@@ -125,22 +294,24 @@ export function AdminPage({
         <strong>{overview.users.length} users</strong>
       </header>
 
-      <div className="admin-tabs" role="tablist" aria-label="Admin resources">
+      <Tabs
+        onValueChange={(value) => setSection(value as AdminSection)}
+        value={section}
+      >
+      <TabsList className="admin-tabs" aria-label="Admin resources">
         {sectionOptions.map(({ id, label, icon: Icon }) => (
-          <button
-            aria-selected={section === id}
+          <TabsTrigger
             className={section === id ? "active" : ""}
             key={id}
-            onClick={() => setSection(id)}
-            role="tab"
-            type="button"
+            value={id}
           >
             <Icon size={16} /> {label}
-          </button>
+          </TabsTrigger>
         ))}
-      </div>
+      </TabsList>
       {error && <div className="auth-error" role="alert">{error}</div>}
 
+      <TabsContent value="users">
       {section === "users" && (
         <div className="admin-stack">
           <form
@@ -196,14 +367,13 @@ export function AdminPage({
                   { value: "revoked", label: "Revoked" },
                 ]}
               />
-              <div className="admin-role-summary">
-                {user.assignments.map((assignment) => (
-                  <span key={`${assignment.role}-${assignment.scope}-${"scopeId" in assignment ? assignment.scopeId : "platform"}`}>
-                    {assignment.role}
-                    {assignment.scope === "platform" ? "" : ` · ${assignment.scopeId}`}
-                  </span>
-                ))}
-              </div>
+              <UserRoleEditor
+                overview={overview}
+                pending={pending}
+                perform={perform}
+                updateRole={updateRole}
+                user={user}
+              />
               <footer>
                 <button aria-label={`Save ${user.displayName}`} disabled={pending}>Save</button>
                 <button
@@ -220,7 +390,9 @@ export function AdminPage({
           ))}
         </div>
       )}
+      </TabsContent>
 
+      <TabsContent value="events">
       {section === "events" && (
         <div className="admin-stack">
           <form
@@ -282,7 +454,9 @@ export function AdminPage({
           ))}
         </div>
       )}
+      </TabsContent>
 
+      <TabsContent value="posts">
       {section === "posts" && (
         <div className="admin-stack">
           <form
@@ -323,7 +497,9 @@ export function AdminPage({
           ))}
         </div>
       )}
+      </TabsContent>
 
+      <TabsContent value="groups">
       {section === "groups" && (
         <div className="admin-stack">
           <form
@@ -396,6 +572,8 @@ export function AdminPage({
           ))}
         </div>
       )}
+      </TabsContent>
+      </Tabs>
     </section>
   );
 }

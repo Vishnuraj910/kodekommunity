@@ -24,7 +24,7 @@ it("shows incoming notifications as toasts and keeps them in an actionable list"
   const onDismissToast = vi.fn();
   const onOpen = vi.fn();
 
-  render(
+  const { rerender } = render(
     <NotificationCenter
       notifications={[notification]}
       toasts={[notification]}
@@ -72,7 +72,32 @@ it("shows incoming notifications as toasts and keeps them in an actionable list"
 
   await user.click(screen.getByRole("button", { name: "Clear all notifications" }));
   expect(onClearAll).not.toHaveBeenCalled();
-  await waitFor(() => expect(onClearAll).toHaveBeenCalledOnce());
+  const laterNotification = {
+    ...notification,
+    id: "notification_2",
+    title: "New event reminder",
+  };
+  rerender(
+    <NotificationCenter
+      notifications={[notification, laterNotification]}
+      toasts={[notification, laterNotification]}
+      onClear={onClear}
+      onClearAll={onClearAll}
+      onDismissToast={onDismissToast}
+      onOpen={onOpen}
+    />,
+  );
+  await user.click(
+    screen.getByRole("button", {
+      name: "Clear notification: New event reminder",
+    }),
+  );
+  await waitFor(() =>
+    expect(onClearAll).toHaveBeenCalledWith([notification.id]),
+  );
+  await waitFor(() =>
+    expect(onClear).toHaveBeenCalledWith(laterNotification.id),
+  );
 });
 
 it("closes the notification popover with Escape and restores trigger focus", async () => {

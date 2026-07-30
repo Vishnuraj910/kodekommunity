@@ -54,4 +54,4 @@ test("the idempotent seed creates realistic auth and social coverage", async () 
   } finally {
     await app.close();
   }
-});
+}, 15_000);

@@ -91,6 +91,7 @@ it("offers root CRUD workflows for users, events, posts, and groups", async () =
     createGroup: vi.fn().mockResolvedValue(undefined),
     updateGroup: vi.fn().mockResolvedValue(undefined),
     deleteGroup: vi.fn().mockResolvedValue(undefined),
+    updateRole: vi.fn().mockResolvedValue(undefined),
   };
   render(<AdminPage overview={overview} {...actions} />);
 
@@ -124,7 +125,27 @@ it("offers root CRUD workflows for users, events, posts, and groups", async () =
   await user.click(screen.getByRole("button", { name: /revoke maya chen/i }));
   expect(actions.deleteUser).toHaveBeenCalledWith("maya");
 
-  await user.click(screen.getByRole("tab", { name: /events/i }));
+  const rolePicker = screen.getByRole("combobox", {
+    name: /role for maya chen/i,
+  });
+  await user.click(rolePicker);
+  await user.click(screen.getByRole("option", { name: "Maintainer" }));
+  await user.click(
+    screen.getByRole("button", { name: /grant role to maya chen/i }),
+  );
+  expect(actions.updateRole).toHaveBeenCalledWith(
+    "maya",
+    "grant",
+    { role: "maintainer", scope: "platform" },
+  );
+
+  const usersTab = screen.getByRole("tab", { name: /users/i });
+  usersTab.focus();
+  await user.keyboard("{ArrowRight}");
+  expect(screen.getByRole("tab", { name: /events/i })).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
   expect(screen.getByDisplayValue("Architecture clinic")).toBeVisible();
   await user.click(screen.getByRole("button", { name: /save architecture clinic/i }));
   expect(actions.updateEvent).toHaveBeenCalled();

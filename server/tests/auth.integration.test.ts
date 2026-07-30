@@ -7,6 +7,8 @@ import { loadConfig } from "../src/config/env.js";
 let app: FastifyInstance;
 
 const email = `local-auth-${Date.now()}@example.test`;
+const invitedEmail = `invited-auth-${Date.now()}@example.test`;
+const invitedUserId = `invited-auth-${Date.now()}`;
 const password = "A secure test passphrase! 2026";
 
 const sessionCookie = (response: { headers: Record<string, unknown> }) => {
@@ -29,9 +31,57 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  await app.prisma.auditLog.deleteMany({ where: { actor: { email } } });
-  await app.prisma.user.deleteMany({ where: { email } });
+  await app.prisma.auditLog.deleteMany({
+    where: { actor: { email: { in: [email, invitedEmail] } } },
+  });
+  await app.prisma.user.deleteMany({
+    where: { email: { in: [email, invitedEmail] } },
+  });
   await app.close();
+});
+
+test("an invited user can claim their account through registration", async () => {
+  await app.prisma.user.create({
+    data: {
+      id: invitedUserId,
+      displayName: "Invited Member",
+      email: invitedEmail,
+      handle: `invited-${Date.now()}`,
+      initials: "IM",
+      status: "INVITED",
+      roleAssignments: {
+        create: { role: "USER", scope: "PLATFORM" },
+      },
+    },
+  });
+
+  const registration = await app.inject({
+    method: "POST",
+    url: "/api/v1/auth/register",
+    payload: {
+      displayName: "Invited Member",
+      email: invitedEmail.toUpperCase(),
+      password,
+    },
+  });
+
+  assert.equal(registration.statusCode, 201);
+  assert.equal(registration.json().status, "authenticated");
+  assert.equal(registration.json().user.email, invitedEmail);
+  assert.equal(registration.json().user.handle.startsWith("invited-"), true);
+  assert.ok(sessionCookie(registration));
+
+  const duplicate = await app.inject({
+    method: "POST",
+    url: "/api/v1/auth/register",
+    payload: {
+      displayName: "Invited Member",
+      email: invitedEmail,
+      password,
+    },
+  });
+  assert.equal(duplicate.statusCode, 409);
+  assert.equal(duplicate.json().error.code, "ACCOUNT_ALREADY_EXISTS");
 });
 
 test("a user can register, use and revoke a session, then log in again", async () => {
@@ -254,6 +304,61 @@ test("email registration requires a verification link before password login", as
       where: { email: verificationEmail },
     });
     await verificationApp.close();
+  }
+});
+
+test("failed verification delivery rolls back a new registration for retry", async () => {
+  const failedEmail = `failed-delivery-${Date.now()}@example.test`;
+  const failedDeliveryApp = await buildApp(
+    loadConfig({
+      ...process.env,
+      NODE_ENV: "test",
+      ALLOW_DEMO_AUTH: "false",
+      EMAIL_VERIFICATION_MODE: "email",
+      RESEND_API_KEY: "re_test",
+      EMAIL_FROM: "Kommunity <verify@example.test>",
+      LOG_LEVEL: "silent",
+    }),
+    {
+      verificationMailer: {
+        sendVerificationEmail: async () => {
+          throw new Error("delivery unavailable");
+        },
+      },
+    },
+  );
+
+  try {
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const registration = await failedDeliveryApp.inject({
+        method: "POST",
+        url: "/api/v1/auth/register",
+        payload: {
+          displayName: "Delivery Failure",
+          email: failedEmail,
+          password,
+        },
+      });
+      assert.equal(registration.statusCode, 503);
+      assert.equal(
+        registration.json().error.code,
+        "VERIFICATION_DELIVERY_FAILED",
+      );
+      assert.equal(
+        await failedDeliveryApp.prisma.user.count({
+          where: { email: failedEmail },
+        }),
+        0,
+      );
+    }
+  } finally {
+    await failedDeliveryApp.prisma.auditLog.deleteMany({
+      where: { actor: { email: failedEmail } },
+    });
+    await failedDeliveryApp.prisma.user.deleteMany({
+      where: { email: failedEmail },
+    });
+    await failedDeliveryApp.close();
   }
 });
 

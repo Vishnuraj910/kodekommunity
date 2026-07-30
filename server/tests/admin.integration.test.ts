@@ -3,6 +3,7 @@ import type { FastifyInstance } from "fastify";
 import { afterAll, beforeAll, test } from "vitest";
 import { buildApp } from "../src/app.js";
 import { loadConfig } from "../src/config/env.js";
+import { updateAdminUser } from "../src/services/admin.js";
 
 let app: FastifyInstance;
 const suffix = Date.now().toString(36);
@@ -372,5 +373,98 @@ test("root administration fails closed for protected, missing, and invalid resou
     });
     assert.equal(response.statusCode, 404);
     assert.equal(response.json().error.code, "COMMUNITY_NOT_FOUND");
+  }
+});
+
+test("concurrent root revocations preserve one active root", async () => {
+  const rootA = `root-a-${suffix}`;
+  const rootB = `root-b-${suffix}`;
+  const previousRoots = await app.prisma.user.findMany({
+    where: {
+      status: "ACTIVE",
+      roleAssignments: {
+        some: { role: "ROOT", scope: "PLATFORM" },
+      },
+    },
+    select: { id: true, status: true },
+  });
+
+  try {
+    await app.prisma.user.updateMany({
+      where: { id: { in: previousRoots.map((root) => root.id) } },
+      data: { status: "DISABLED" },
+    });
+    for (const id of [rootA, rootB]) {
+      await app.prisma.user.create({
+        data: {
+          id,
+          displayName: id,
+          email: `${id}@example.test`,
+          handle: id,
+          initials: id === rootA ? "RA" : "RB",
+          status: "ACTIVE",
+          roleAssignments: {
+            create: [
+              { role: "USER", scope: "PLATFORM" },
+              { role: "ROOT", scope: "PLATFORM" },
+            ],
+          },
+        },
+      });
+    }
+
+    const identity = (id: string) => ({
+      id,
+      status: "active" as const,
+      assignments: [
+        { role: "user" as const, scope: "platform" as const },
+        { role: "root" as const, scope: "platform" as const },
+      ],
+    });
+    const outcomes = await Promise.allSettled([
+      updateAdminUser(
+        app.prisma,
+        identity(rootA),
+        rootB,
+        { status: "revoked" },
+        `concurrent-root-a-${suffix}`,
+      ),
+      updateAdminUser(
+        app.prisma,
+        identity(rootB),
+        rootA,
+        { status: "revoked" },
+        `concurrent-root-b-${suffix}`,
+      ),
+    ]);
+
+    assert.equal(
+      await app.prisma.roleAssignment.count({
+        where: {
+          role: "ROOT",
+          scope: "PLATFORM",
+          user: { status: "ACTIVE" },
+        },
+      }),
+      1,
+    );
+    assert.equal(
+      outcomes.filter((outcome) => outcome.status === "rejected").length,
+      1,
+    );
+  } finally {
+    await app.prisma.idempotencyRecord.deleteMany({
+      where: { actorUserId: { in: [rootA, rootB] } },
+    });
+    await app.prisma.auditLog.deleteMany({
+      where: { actorUserId: { in: [rootA, rootB] } },
+    });
+    await app.prisma.user.deleteMany({ where: { id: { in: [rootA, rootB] } } });
+    for (const root of previousRoots) {
+      await app.prisma.user.update({
+        where: { id: root.id },
+        data: { status: root.status },
+      });
+    }
   }
 });

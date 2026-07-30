@@ -23,7 +23,7 @@ type NotificationCenterProps = {
   notifications: AppNotification[];
   toasts: AppNotification[];
   onClear: (notificationId: string) => void;
-  onClearAll: () => void;
+  onClearAll: (notificationIds: string[]) => void;
   onDismissToast: (notificationId: string) => void;
   onOpen: (notification: AppNotification) => void;
 };
@@ -82,7 +82,7 @@ export function NotificationCenter({
 }: NotificationCenterProps): React.JSX.Element {
   const [open, setOpen] = useState(false);
   const [clearingIds, setClearingIds] = useState<Set<string>>(() => new Set());
-  const clearAllPending = useRef(false);
+  const clearAllPending = useRef<string[] | null>(null);
   const triggerLabel = notifications.length
     ? `Notifications (${notifications.length} unread)`
     : "Notifications";
@@ -92,8 +92,13 @@ export function NotificationCenter({
     const timeout = window.setTimeout(() => {
       setClearingIds(new Set());
       if (clearAllPending.current) {
-        clearAllPending.current = false;
-        onClearAll();
+        const notificationIds = clearAllPending.current;
+        clearAllPending.current = null;
+        onClearAll(notificationIds);
+        const bulkIds = new Set(notificationIds);
+        for (const notificationId of clearingIds) {
+          if (!bulkIds.has(notificationId)) onClear(notificationId);
+        }
         return;
       }
       for (const notificationId of clearingIds) {
@@ -137,10 +142,11 @@ export function NotificationCenter({
                 aria-label="Clear all notifications"
                 disabled={!notifications.length}
                 onClick={() => {
-                  clearAllPending.current = true;
-                  setClearingIds(
-                    new Set(notifications.map((notification) => notification.id)),
+                  const notificationIds = notifications.map(
+                    (notification) => notification.id,
                   );
+                  clearAllPending.current = notificationIds;
+                  setClearingIds(new Set(notificationIds));
                 }}
                 type="button"
               >

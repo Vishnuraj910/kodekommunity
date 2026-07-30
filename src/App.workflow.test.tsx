@@ -39,6 +39,7 @@ const api = vi.hoisted(() => ({
   updateAdminPost: vi.fn(),
   updateAdminUser: vi.fn(),
   updateProfile: vi.fn(),
+  updateRole: vi.fn(),
 }));
 const live = vi.hoisted(() => ({
   callbacks: new Map<
@@ -246,6 +247,7 @@ const primeAuthenticatedApp = () => {
     api.updateAdminGroup,
     api.updateAdminPost,
     api.updateAdminUser,
+    api.updateRole,
   ]) {
     operation.mockResolvedValue(undefined);
   }
@@ -581,7 +583,7 @@ describe("authenticated social application", () => {
     expect(api.createDirectConversation).not.toHaveBeenCalled();
   });
 
-  it("opens root at home and exposes the Admin route with every scoped role preview", async () => {
+  it("opens root at home and previews only the roles actually assigned to the user", async () => {
     const user = userEvent.setup();
     render(<App />);
 
@@ -597,11 +599,13 @@ describe("authenticated social application", () => {
     await user.click(roleSelect);
     const roleOptions = screen.getByRole("listbox");
     expect(within(roleOptions).getByRole("option", { name: "Root · platform" })).toBeVisible();
-    expect(within(roleOptions).getByRole("option", { name: "Maintainer · platform" })).toBeVisible();
-    expect(within(roleOptions).getByRole("option", { name: "Super admin · KodeKommunity" })).toBeVisible();
-    expect(within(roleOptions).getByRole("option", { name: "Admin · KodeKommunity" })).toBeVisible();
-    expect(within(roleOptions).getByRole("option", { name: "Presenter · Reliable systems clinic" })).toBeVisible();
     expect(within(roleOptions).getByRole("option", { name: "User · platform" })).toBeVisible();
+    expect(
+      within(roleOptions).queryByRole("option", { name: "Maintainer · platform" }),
+    ).not.toBeInTheDocument();
+    expect(
+      within(roleOptions).queryByRole("option", { name: "Admin · KodeKommunity" }),
+    ).not.toBeInTheDocument();
   });
 
   it("keeps a baseline user out of platform administration", async () => {
@@ -618,6 +622,31 @@ describe("authenticated social application", () => {
     expect(await screen.findByText("Ship small, observable changes.")).toBeVisible();
     expect(screen.queryByRole("button", { name: /^admin$/i })).not.toBeInTheDocument();
     expect(screen.queryByRole("complementary", { name: /role preview/i })).not.toBeInTheDocument();
+  });
+
+  it("reconciles navigation when the active root revokes their own root role", async () => {
+    const user = userEvent.setup();
+    api.updateRole.mockResolvedValueOnce({
+      user: {
+        ...bootstrap.user,
+        assignments: [{ role: "user", scope: "platform" }],
+      },
+    });
+    render(<App />);
+
+    await screen.findByText("Ship small, observable changes.");
+    await user.click(screen.getByRole("button", { name: /^admin$/i }));
+    await user.click(
+      await screen.findByRole("button", {
+        name: /revoke root from maya chen/i,
+      }),
+    );
+
+    await waitFor(() =>
+      expect(screen.queryByRole("button", { name: /^admin$/i })).not.toBeInTheDocument(),
+    );
+    expect(window.location.pathname).toBe("/");
+    expect(api.loadAdminOverview).toHaveBeenCalledOnce();
   });
 
   it("lets a user open and update their account details", async () => {

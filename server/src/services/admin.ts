@@ -294,7 +294,7 @@ export const createAdminUser = async (
 };
 
 const protectRootStatus = async (
-  prisma: PrismaClient,
+  transaction: Prisma.TransactionClient,
   identity: AuthenticatedIdentity,
   userId: string,
   status: AdminUserUpdate["status"],
@@ -307,12 +307,17 @@ const protectRootStatus = async (
       "The active root cannot revoke their own access",
     );
   }
-  const targetIsRoot = await prisma.roleAssignment.findFirst({
+  await transaction.$executeRaw`
+    SELECT pg_advisory_xact_lock(
+      hashtext('kommunity:active-root-invariant')
+    )
+  `;
+  const targetIsRoot = await transaction.roleAssignment.findFirst({
     where: { userId, role: "ROOT", scope: "PLATFORM" },
     select: { id: true },
   });
   if (!targetIsRoot) return;
-  const activeRoots = await prisma.roleAssignment.count({
+  const activeRoots = await transaction.roleAssignment.count({
     where: {
       role: "ROOT",
       scope: "PLATFORM",
@@ -336,7 +341,6 @@ export const updateAdminUser = async (
   idempotencyKey: string,
 ) => {
   requireRoot(identity);
-  await protectRootStatus(prisma, identity, userId, input.status);
   try {
     return await runIdempotently<AdminUser>(
       prisma,
@@ -348,6 +352,7 @@ export const updateAdminUser = async (
         statusCode: 200,
       },
       async (transaction) => {
+        await protectRootStatus(transaction, identity, userId, input.status);
         const existing = await transaction.user.findUnique({
           where: { id: userId },
           select: { id: true },
@@ -398,7 +403,6 @@ export const revokeAdminUser = async (
   idempotencyKey: string,
 ) => {
   requireRoot(identity);
-  await protectRootStatus(prisma, identity, userId, "revoked");
   return runIdempotently(
     prisma,
     {
@@ -409,6 +413,7 @@ export const revokeAdminUser = async (
       statusCode: 204,
     },
     async (transaction) => {
+      await protectRootStatus(transaction, identity, userId, "revoked");
       const result = await transaction.user.updateMany({
         where: { id: userId },
         data: { status: "REVOKED" },

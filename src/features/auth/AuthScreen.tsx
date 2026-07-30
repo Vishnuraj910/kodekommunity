@@ -8,6 +8,12 @@ import {
 } from "lucide-react";
 import { useState } from "react";
 import { Input } from "../../components/ui/input";
+import {
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+} from "../../components/ui/tabs";
 
 type LoginInput = {
   identifier: string;
@@ -145,26 +151,27 @@ export function AuthScreen({
             </button>
           ) : (
             <div className="auth-local">
-              <div className="auth-tabs" role="tablist" aria-label="Local account">
-                <button
+              <Tabs
+                onValueChange={(value) =>
+                  setMode(value as "login" | "register")
+                }
+                value={mode}
+              >
+              <TabsList className="auth-tabs" aria-label="Local account">
+                <TabsTrigger
                   className={mode === "login" ? "active" : ""}
-                  type="button"
-                  role="tab"
-                  aria-selected={mode === "login"}
-                  onClick={() => setMode("login")}
+                  value="login"
                 >
                   Log in
-                </button>
-                <button
+                </TabsTrigger>
+                <TabsTrigger
                   className={mode === "register" ? "active" : ""}
-                  type="button"
-                  role="tab"
-                  aria-selected={mode === "register"}
-                  onClick={() => setMode("register")}
+                  value="register"
                 >
                   Register
-                </button>
-              </div>
+                </TabsTrigger>
+              </TabsList>
+              <TabsContent key={mode} value={mode}>
               <form onSubmit={submit}>
                 {mode === "register" && (
                   <>
@@ -250,6 +257,8 @@ export function AuthScreen({
               >
                 Back to preferred sign-in
               </button>
+              </TabsContent>
+              </Tabs>
             </div>
           )}
         </div>

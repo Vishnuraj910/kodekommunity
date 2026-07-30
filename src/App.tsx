@@ -84,6 +84,7 @@ import {
   updateAdminPost,
   updateAdminUser,
   updateProfile,
+  updateRole,
 } from "./services/api";
 import { subscribeToConversation } from "./services/live-chat";
 
@@ -449,6 +450,9 @@ function App(): React.JSX.Element {
 
   useLayoutEffect(() => {
     document.documentElement.dataset.theme = theme;
+    document
+      .querySelector('meta[name="theme-color"]')
+      ?.setAttribute("content", theme === "dark" ? "#090909" : "#ffffff");
   }, [theme]);
 
   useEffect(() => {
@@ -566,52 +570,31 @@ function App(): React.JSX.Element {
     if (!bootstrap || !canSwitch) return [];
     return [
       { value: "all", label: "All roles" },
-      {
-        value: "root",
-        label: "Root · platform",
-        assignment: { role: "root", scope: "platform" },
-      },
-      {
-        value: "maintainer",
-        label: "Maintainer · platform",
-        assignment: { role: "maintainer", scope: "platform" },
-      },
-      ...bootstrap.communities.flatMap((community) => [
-        {
-          value: `super_admin:${community.id}`,
-          label: `Super admin · ${community.name}`,
-          assignment: {
-            role: "super_admin",
-            scope: "community",
-            scopeId: community.id,
-          } as ApiRoleAssignment,
-        },
-        {
-          value: `admin:${community.id}`,
-          label: `Admin · ${community.name}`,
-          assignment: {
-            role: "admin",
-            scope: "community",
-            scopeId: community.id,
-          } as ApiRoleAssignment,
-        },
-      ]),
-      ...bootstrap.events.map((event) => ({
-        value: `presenter:${event.id}`,
-        label: `Presenter · ${event.title}`,
-        assignment: {
-          role: "presenter",
-          scope: "event",
-          scopeId: event.id,
-        } as ApiRoleAssignment,
-      })),
-      {
-        value: "user",
-        label: "User · platform",
-        assignment: { role: "user", scope: "platform" },
-      },
+      ...assignments.map((assignment) => {
+        const value =
+          assignment.scope === "platform"
+            ? assignment.role
+            : `${assignment.role}:${assignment.scopeId}`;
+        const scopeLabel =
+          assignment.scope === "community"
+            ? bootstrap.communities.find(
+                (community) => community.id === assignment.scopeId,
+              )?.name ?? assignment.scopeId
+            : assignment.scope === "event"
+              ? bootstrap.events.find((event) => event.id === assignment.scopeId)
+                  ?.title ?? assignment.scopeId
+              : "platform";
+        const roleLabel = assignment.role
+          .replace("_", " ")
+          .replace(/^\w/u, (letter) => letter.toUpperCase());
+        return {
+          value,
+          label: `${roleLabel} · ${scopeLabel}`,
+          assignment,
+        };
+      }),
     ];
-  }, [bootstrap, canSwitch]);
+  }, [assignments, bootstrap, canSwitch]);
   const previewAssignment = roleOptions.find(
     (option) => option.value === activeRole,
   )?.assignment;
@@ -805,9 +788,14 @@ function App(): React.JSX.Element {
                   current.filter((item) => item.id !== notificationId),
                 );
               }}
-              onClearAll={() => {
-                setNotifications([]);
-                setToasts([]);
+              onClearAll={(notificationIds) => {
+                const cleared = new Set(notificationIds);
+                setNotifications((current) =>
+                  current.filter((item) => !cleared.has(item.id)),
+                );
+                setToasts((current) =>
+                  current.filter((item) => !cleared.has(item.id)),
+                );
               }}
               onDismissToast={(notificationId) =>
                 setToasts((current) =>
@@ -921,6 +909,24 @@ function App(): React.JSX.Element {
             }}
             deleteUser={async (userId) => {
               await deleteAdminUser(userId);
+              await refreshAdmin();
+            }}
+            updateRole={async (userId, action, assignment) => {
+              const result = await updateRole(userId, action, assignment);
+              if (userId === bootstrap.user.id) {
+                setBootstrap((current) =>
+                  current ? { ...current, user: result.user } : current,
+                );
+                const remainsRoot = result.user.assignments.some(
+                  (current) => current.role === "root",
+                );
+                if (!remainsRoot) {
+                  setAdminOverview(null);
+                  setActiveRole("all");
+                  navigateToPage("feed");
+                  return;
+                }
+              }
               await refreshAdmin();
             }}
             createEvent={async (input) => {

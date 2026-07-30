@@ -72,7 +72,10 @@ links use single-use random tokens; only their SHA-256 hashes, expiry, and
 consumption time are persisted. Sessions use opaque tokens whose hashes, expiry,
 and revocation state are persisted in PostgreSQL; the browser receives only an
 HttpOnly, SameSite cookie. OIDC uses Authorization Code with PKCE, state, nonce,
-verified email, exact issuer validation, and a one-time flow record. The role
+verified email, exact issuer validation, a browser-bound HttpOnly flow cookie,
+and a one-time flow record. Admin-created invitations are claimed through the
+same registration form; production still requires the invited mailbox to
+complete email verification before login. The role
 switcher remains a preview tool—the server always authorizes the authenticated
 database identity and object scope.
 

@@ -1,5 +1,6 @@
 import type { FastifyPluginAsyncZod } from "fastify-type-provider-zod";
 import { z } from "zod";
+import { AppError } from "../domain/errors.js";
 import {
   authResponseSchema,
   emailVerificationQuerySchema,
@@ -29,6 +30,12 @@ const cookieOptions = (secure: boolean) => ({
   sameSite: "lax" as const,
   secure,
 });
+const oidcFlowCookieName = "kommunity_oidc_flow";
+const oidcFlowCookieOptions = (secure: boolean) => ({
+  ...cookieOptions(secure),
+  path: "/api/v1/auth/oidc",
+  maxAge: 10 * 60,
+});
 
 export const authRoutes: FastifyPluginAsyncZod = async (fastify) => {
   fastify.get(
@@ -46,8 +53,13 @@ export const authRoutes: FastifyPluginAsyncZod = async (fastify) => {
       },
     },
     async (_request, reply) => {
-      const authorizationUrl = await beginOidcFlow(fastify);
-      return reply.redirect(authorizationUrl.href);
+      const authorization = await beginOidcFlow(fastify);
+      reply.setCookie(
+        oidcFlowCookieName,
+        authorization.state,
+        oidcFlowCookieOptions(fastify.config.NODE_ENV === "production"),
+      );
+      return reply.redirect(authorization.url.href);
     },
   );
 
@@ -69,6 +81,18 @@ export const authRoutes: FastifyPluginAsyncZod = async (fastify) => {
       },
     },
     async (request, reply) => {
+      const boundState = request.cookies[oidcFlowCookieName];
+      reply.clearCookie(
+        oidcFlowCookieName,
+        oidcFlowCookieOptions(fastify.config.NODE_ENV === "production"),
+      );
+      if (!boundState || boundState !== request.query.state) {
+        throw new AppError(
+          401,
+          "INVALID_OIDC_FLOW",
+          "The OIDC login flow is invalid or expired",
+        );
+      }
       const callbackBase =
         fastify.config.OIDC_REDIRECT_URI ?? fastify.config.CLIENT_ORIGIN;
       const result = await completeOidcFlow(

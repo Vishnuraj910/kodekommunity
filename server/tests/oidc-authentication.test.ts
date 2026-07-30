@@ -92,9 +92,10 @@ const fastify = (
 describe("OIDC application flow", () => {
   it("starts a short-lived one-time provider flow", async () => {
     const app = fastify();
-    await expect(beginOidcFlow(app as never)).resolves.toEqual(
-      new URL("https://identity.example.test/authorize"),
-    );
+    await expect(beginOidcFlow(app as never)).resolves.toEqual({
+      state,
+      url: new URL("https://identity.example.test/authorize"),
+    });
     expect(app.prisma.oidcFlow.deleteMany).toHaveBeenCalled();
     expect(app.prisma.oidcFlow.create).toHaveBeenCalledWith(
       expect.objectContaining({

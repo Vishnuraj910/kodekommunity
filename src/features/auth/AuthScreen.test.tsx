@@ -152,4 +152,32 @@ describe("AuthScreen", () => {
     );
     expect(screen.getByLabelText(/^password$/i)).toHaveValue("");
   });
+
+  it("supports native tab keyboard navigation for local authentication", async () => {
+    const user = userEvent.setup();
+    render(
+      <AuthScreen
+        onLocalLogin={vi.fn()}
+        onLocalRegister={vi.fn()}
+        onOidc={vi.fn()}
+      />,
+    );
+
+    await user.click(
+      screen.getByRole("button", { name: /use email and password/i }),
+    );
+    const loginTab = screen.getByRole("tab", { name: /log in/i });
+    const loginPanel = screen.getByRole("tabpanel", { name: /log in/i });
+    loginTab.focus();
+    await user.keyboard("{ArrowRight}");
+
+    expect(screen.getByRole("tab", { name: /register/i })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+    expect(screen.getByLabelText(/display name/i)).toBeVisible();
+    expect(
+      screen.getByRole("tabpanel", { name: /register/i }),
+    ).not.toBe(loginPanel);
+  });
 });

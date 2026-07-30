@@ -65,58 +65,102 @@ export const registerWithPassword = async (
   const verificationTokenHash = verificationToken
     ? createHash("sha256").update(verificationToken).digest("hex")
     : undefined;
+  let claimedInvitation = false;
   try {
-    const user = await fastify.prisma.$transaction(async (transaction) => {
-      const created = await transaction.user.create({
-        data: {
-          displayName: registration.displayName,
-          email: registration.email,
-          handle: usernameFor(registration.displayName, registration.email),
-          initials: initialsFor(registration.displayName),
-          status: autoActivate ? "ACTIVE" : "INVITED",
-          passwordCredential: { create: { passwordHash } },
-          roleAssignments: {
-            create: { role: "USER", scope: "PLATFORM" },
-          },
-          ...(session ? { sessions: { create: session.record } } : {}),
-          ...(verificationTokenHash
-            ? {
-                emailVerifications: {
-                  create: {
-                    tokenHash: verificationTokenHash,
-                    expiresAt: new Date(
-                      Date.now() +
-                        fastify.config.EMAIL_VERIFICATION_TTL_HOURS *
-                          60 *
-                          60 *
-                          1000,
-                    ),
-                  },
-                },
-              }
-            : {}),
+    const result = await fastify.prisma.$transaction(async (transaction) => {
+      await transaction.$executeRaw`
+        SELECT pg_advisory_xact_lock(
+          hashtext(${`kommunity:registration:${registration.email.toLowerCase()}`})
+        )
+      `;
+      const existing = await transaction.user.findFirst({
+        where: {
+          email: { equals: registration.email, mode: "insensitive" },
         },
         select: {
           id: true,
-          displayName: true,
-          email: true,
-          handle: true,
+          status: true,
+          passwordCredential: { select: { userId: true } },
         },
       });
+      if (
+        existing &&
+        (existing.status !== "INVITED" || existing.passwordCredential)
+      ) {
+        throw new AppError(
+          409,
+          "ACCOUNT_ALREADY_EXISTS",
+          "An account with those details already exists",
+        );
+      }
+      const authenticationData = {
+        status: autoActivate ? ("ACTIVE" as const) : ("INVITED" as const),
+        passwordCredential: { create: { passwordHash } },
+        ...(session ? { sessions: { create: session.record } } : {}),
+        ...(verificationTokenHash
+          ? {
+              emailVerifications: {
+                create: {
+                  tokenHash: verificationTokenHash,
+                  expiresAt: new Date(
+                    Date.now() +
+                      fastify.config.EMAIL_VERIFICATION_TTL_HOURS *
+                        60 *
+                        60 *
+                        1000,
+                  ),
+                },
+              },
+            }
+          : {}),
+      };
+      const user = existing
+        ? await transaction.user.update({
+            where: { id: existing.id },
+            data: authenticationData,
+            select: {
+              id: true,
+              displayName: true,
+              email: true,
+              handle: true,
+            },
+          })
+        : await transaction.user.create({
+            data: {
+              displayName: registration.displayName,
+              email: registration.email,
+              handle: usernameFor(registration.displayName, registration.email),
+              initials: initialsFor(registration.displayName),
+              ...authenticationData,
+              roleAssignments: {
+                create: { role: "USER", scope: "PLATFORM" },
+              },
+            },
+            select: {
+              id: true,
+              displayName: true,
+              email: true,
+              handle: true,
+            },
+          });
+      claimedInvitation = Boolean(existing);
       await transaction.auditLog.create({
         data: {
-          actorUserId: created.id,
-          action: "auth.local.registered",
+          actorUserId: user.id,
+          action: existing
+            ? "auth.local.invitation_claimed"
+            : "auth.local.registered",
           targetType: "user",
-          targetId: created.id,
+          targetId: user.id,
           metadata: {
             method: "password",
             verificationRequired: !autoActivate,
           },
         },
       });
-      return created;
+      return user;
     });
+    const user = result;
     if (!session && verificationToken && verificationTokenHash) {
       try {
         await fastify.verificationMailer.sendVerificationEmail({
@@ -129,7 +173,32 @@ export const registerWithPassword = async (
           idempotencyKey: verificationTokenHash,
         });
       } catch {
-        await fastify.prisma.user.delete({ where: { id: user.id } });
+        if (claimedInvitation) {
+          await fastify.prisma.$transaction([
+            fastify.prisma.emailVerification.deleteMany({
+              where: { tokenHash: verificationTokenHash },
+            }),
+            fastify.prisma.passwordCredential.deleteMany({
+              where: { userId: user.id },
+            }),
+            fastify.prisma.auditLog.deleteMany({
+              where: {
+                actorUserId: user.id,
+                action: "auth.local.invitation_claimed",
+              },
+            }),
+          ]);
+        } else {
+          await fastify.prisma.$transaction(async (transaction) => {
+            await transaction.auditLog.deleteMany({
+              where: {
+                actorUserId: user.id,
+                action: "auth.local.registered",
+              },
+            });
+            await transaction.user.delete({ where: { id: user.id } });
+          });
+        }
         throw new AppError(
           503,
           "VERIFICATION_DELIVERY_FAILED",
