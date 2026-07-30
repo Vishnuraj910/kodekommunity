@@ -76,7 +76,6 @@ import {
   roleAssignmentKey,
   roleDefinitions,
   roleNames,
-  toggleAssignment,
   type AuthorizationContext,
   type AuthorizationSubject,
   type IdentityStatusDirectory,
@@ -94,6 +93,16 @@ import {
   type StateValidator,
   writeStoredState,
 } from "./storage";
+import {
+  ApiError,
+  loadAccessDirectory,
+  loadBootstrap,
+  loadMessages,
+  postMessage,
+  updateRole,
+  updateRsvp,
+  updateCommunityMembership,
+} from "./api";
 
 const EIGHT_HOURS_MS = 8 * 60 * 60 * 1_000;
 const ONE_DAY_MS = 24 * 60 * 60 * 1_000;
@@ -2807,14 +2816,11 @@ function Onboarding({
 const initialRoleDirectory: RoleDirectory = {
   maya: [
     { role: "root", scope: "platform" },
-    { role: "maintainer", scope: "platform" },
-    { role: "super_admin", scope: "community", scopeId: "c1" },
-    { role: "admin", scope: "community", scopeId: "c2" },
-    { role: "presenter", scope: "event", scopeId: "e1" },
     { role: "user", scope: "platform" },
   ],
   priya: [
-    { role: "super_admin", scope: "community", scopeId: "c3" },
+    { role: "maintainer", scope: "platform" },
+    { role: "super_admin", scope: "community", scopeId: "c1" },
     { role: "user", scope: "platform" },
   ],
   lena: [
@@ -2823,7 +2829,6 @@ const initialRoleDirectory: RoleDirectory = {
     { role: "user", scope: "platform" },
   ],
   jon: [
-    { role: "maintainer", scope: "platform" },
     { role: "user", scope: "platform" },
   ],
 };
@@ -2886,13 +2891,14 @@ function App(): React.JSX.Element {
     "local",
     ONE_DAY_MS,
   );
-  const [identityStatuses] = useBrowserState<IdentityStatusDirectory>(
+  const [identityStatuses, setIdentityStatuses] =
+    useBrowserState<IdentityStatusDirectory>(
     "kommunity-identity-statuses",
     initialIdentityStatuses,
     isIdentityStatusDirectory,
     "local",
     ONE_DAY_MS,
-  );
+    );
   const [activeRoleKey, setActiveRoleKey] = useBrowserState(
     "kommunity-active-role",
     "all",
@@ -2931,6 +2937,72 @@ function App(): React.JSX.Element {
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
   }, [theme]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const hydrateFromServer = async () => {
+      try {
+        const [bootstrap, access, messagePage] = await Promise.all([
+          loadBootstrap(),
+          loadAccessDirectory(),
+          loadMessages("m1"),
+        ]);
+        if (cancelled) return;
+        setJoinedIds(
+          bootstrap.communities
+            .filter((community) => community.joined)
+            .map((community) => community.id),
+        );
+        setGoingIds(
+          bootstrap.events
+            .filter((event) => event.going)
+            .map((event) => event.id),
+        );
+        setRoleDirectory(
+          Object.fromEntries(
+            access.users.map((user) => [user.id, user.assignments]),
+          ),
+        );
+        setIdentityStatuses(
+          Object.fromEntries(
+            access.users.map((user) => [user.id, user.status]),
+          ),
+        );
+        setMessages(
+          messagePage.items.map((message) => ({
+            id: message.id,
+            author: message.author,
+            initials: message.initials,
+            color: message.color,
+            body: message.body,
+            time: new Intl.DateTimeFormat(undefined, {
+              hour: "numeric",
+              minute: "2-digit",
+            }).format(new Date(message.createdAt)),
+            own: message.own,
+          })),
+        );
+      } catch (error) {
+        if (!cancelled) {
+          showToast(
+            error instanceof ApiError
+              ? `Backend unavailable: ${error.message}`
+              : "Backend unavailable; using saved preview data",
+          );
+        }
+      }
+    };
+    void hydrateFromServer();
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    setGoingIds,
+    setIdentityStatuses,
+    setJoinedIds,
+    setMessages,
+    setRoleDirectory,
+  ]);
 
   useEffect(() => {
     if (
@@ -2992,22 +3064,46 @@ function App(): React.JSX.Element {
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
-  const toggleJoin = (id: string, name: string) => {
+  const toggleJoin = async (id: string, name: string) => {
     const joined = joinedIds.includes(id);
-    setJoinedIds((current) =>
-      joined ? current.filter((item) => item !== id) : [...current, id],
-    );
-    showToast(joined ? `You left ${name}` : `Welcome to ${name}`);
+    try {
+      const result = await updateCommunityMembership(
+        id,
+        joined ? "left" : "joined",
+      );
+      setJoinedIds((current) =>
+        result.status === "joined"
+          ? Array.from(new Set([...current, id]))
+          : current.filter((item) => item !== id),
+      );
+      showToast(result.status === "joined" ? `Welcome to ${name}` : `You left ${name}`);
+    } catch (error) {
+      showToast(
+        error instanceof Error ? error.message : "Could not update membership",
+      );
+    }
   };
 
-  const toggleGoing = (event: EventItem) => {
+  const toggleGoing = async (event: EventItem) => {
     const going = goingIds.includes(event.id);
-    setGoingIds((current) =>
-      going
-        ? current.filter((item) => item !== event.id)
-        : [...current, event.id],
-    );
-    showToast(going ? `RSVP cancelled` : `You’re going to ${event.title}`);
+    try {
+      const result = await updateRsvp(
+        event.id,
+        going ? "not_going" : "going",
+      );
+      setGoingIds((current) =>
+        result.status === "going"
+          ? Array.from(new Set([...current, event.id]))
+          : current.filter((item) => item !== event.id),
+      );
+      showToast(
+        result.status === "going"
+          ? `You’re going to ${event.title}`
+          : "RSVP cancelled",
+      );
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : "Could not update RSVP");
+    }
   };
 
   const toggleGroup = (id: string, name: string) => {
@@ -3042,22 +3138,27 @@ function App(): React.JSX.Element {
     showToast(saved ? "Removed from saved" : "Post saved");
   };
 
-  const sendMessage = (body: string) => {
-    setMessages((current) => [
-      ...current,
-      {
-        id: `x-${Date.now()}`,
-        author: "Maya Chen",
-        initials: "MC",
-        color: "ink",
-        body,
-        time: "Just now",
-        own: true,
-      },
-    ]);
+  const sendMessage = async (body: string) => {
+    try {
+      const message = await postMessage("m1", body);
+      setMessages((current) => [
+        ...current,
+        {
+          id: message.id,
+          author: message.author,
+          initials: message.initials,
+          color: message.color,
+          body: message.body,
+          time: "Just now",
+          own: message.own,
+        },
+      ]);
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : "Could not send message");
+    }
   };
 
-  const updateMemberRole = (
+  const updateMemberRole = async (
     userId: string,
     target: RoleAssignment,
   ) => {
@@ -3080,17 +3181,26 @@ function App(): React.JSX.Element {
       showToast("The final root assignment cannot be removed");
       return;
     }
-    setRoleDirectory((current) => ({
-      ...current,
-      [userId]: toggleAssignment(memberAssignments, target),
-    }));
     const targetKey = roleAssignmentKey(target);
     const adding = !memberAssignments.some(
       (assignment) => roleAssignmentKey(assignment) === targetKey,
     );
-    showToast(
-      `${roleDefinitions[role].label} ${adding ? "assigned" : "removed"}`,
-    );
+    try {
+      const result = await updateRole(
+        userId,
+        adding ? "grant" : "revoke",
+        target,
+      );
+      setRoleDirectory((current) => ({
+        ...current,
+        [userId]: result.user.assignments,
+      }));
+      showToast(
+        `${roleDefinitions[role].label} ${adding ? "assigned" : "removed"}`,
+      );
+    } catch (error) {
+      showToast(error instanceof Error ? error.message : "Could not update role");
+    }
   };
 
   const clearLocalData = async () => {

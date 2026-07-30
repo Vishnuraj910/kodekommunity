@@ -10,17 +10,26 @@
   },
   "scripts": {
     "dev": "vite",
+    "dev:all": "corepack pnpm --parallel --filter kommunity --filter kommunity-server run dev",
+    "dev:server": "corepack pnpm --dir server dev",
     "build": "tsc -b && vite build",
+    "build:all": "corepack pnpm run build && corepack pnpm --dir server build",
+    "db:migrate": "corepack pnpm --dir server db:migrate",
+    "db:seed": "corepack pnpm --dir server db:seed",
+    "db:status": "corepack pnpm --dir server db:status",
     "preview": "vite preview",
     "security:audit": "pnpm audit --prod",
     "test": "node --experimental-strip-types --test tests/*.test.mjs",
-    "typecheck": "tsc -b"
+    "test:all": "corepack pnpm run test && corepack pnpm --dir server test",
+    "typecheck": "tsc -b",
+    "typecheck:all": "corepack pnpm run typecheck && corepack pnpm --dir server typecheck"
   },
   "dependencies": {
     "emoji-picker-react": "4.19.1",
     "lucide-react": "0.468.0",
     "react": "19.2.8",
-    "react-dom": "19.2.8"
+    "react-dom": "19.2.8",
+    "zod": "4.4.3"
   },
   "devDependencies": {
     "@types/react": "19.2.17",
