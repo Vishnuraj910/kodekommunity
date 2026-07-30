@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
+import { access, readFile } from "node:fs/promises";
 import test from "node:test";
 
 const read = (path) => readFile(new URL(path, import.meta.url), "utf8");
@@ -30,4 +30,9 @@ test("document and preview server declare core browser protections", async () =>
   }
   assert.match(viteConfig, /X-Content-Type-Options/);
   assert.match(staticHeaders, /frame-ancestors 'none'/);
+});
+
+test("stale generated Vite configs cannot override the TypeScript source", async () => {
+  await assert.rejects(access(new URL("../vite.config.js", import.meta.url)));
+  await assert.rejects(access(new URL("../vite.config.d.ts", import.meta.url)));
 });
