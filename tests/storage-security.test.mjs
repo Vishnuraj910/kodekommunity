@@ -1,8 +1,10 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 import { isRoleDirectory } from "../src/roles.ts";
 import {
+  clearKommunityBrowserData,
   clearStoredNamespace,
   isStringArray,
   readStoredState,
@@ -60,6 +62,71 @@ test("device-data purge removes only Kommunity-owned values", () => {
   assert.equal(storage.getItem("kommunity-theme"), null);
   assert.equal(storage.getItem("kommunity-messages"), null);
   assert.equal(storage.getItem("another-app-session"), "preserve");
+});
+
+test("browser-data purge covers local state, session messages, and owned caches", async () => {
+  const localStorage = new MemoryStorage();
+  const sessionStorage = new MemoryStorage();
+  const deletedCaches = [];
+  localStorage.setItem("kommunity-theme", "light");
+  localStorage.setItem("another-app-theme", "dark");
+  sessionStorage.setItem("kommunity-messages", "private");
+  sessionStorage.setItem("another-app-session", "preserve");
+
+  await clearKommunityBrowserData({
+    localStorage,
+    sessionStorage,
+    caches: {
+      keys: async () => ["kommunity-shell-v2", "another-app-cache"],
+      delete: async (key) => {
+        deletedCaches.push(key);
+        return true;
+      },
+    },
+  });
+
+  assert.equal(localStorage.getItem("kommunity-theme"), null);
+  assert.equal(localStorage.getItem("another-app-theme"), "dark");
+  assert.equal(sessionStorage.getItem("kommunity-messages"), null);
+  assert.equal(sessionStorage.getItem("another-app-session"), "preserve");
+  assert.deepEqual(deletedCaches, ["kommunity-shell-v2"]);
+});
+
+test("browser-data purge reports cache cleanup failures", async () => {
+  await assert.rejects(
+    clearKommunityBrowserData({
+      localStorage: new MemoryStorage(),
+      sessionStorage: new MemoryStorage(),
+      caches: {
+        keys: async () => {
+          throw new Error("cache unavailable");
+        },
+        delete: async () => true,
+      },
+    }),
+    /cache unavailable/,
+  );
+});
+
+test("rehydration does not extend stored-state expiry", async () => {
+  const app = await readFile(
+    new URL("../src/App.tsx", import.meta.url),
+    "utf8",
+  );
+
+  assert.match(app, /if \(!storage \|\| !shouldPersist\.current\) return/);
+  assert.match(app, /shouldPersist\.current = true/);
+});
+
+test("live UI authorization preserves identity lifecycle status", async () => {
+  const app = await readFile(
+    new URL("../src/App.tsx", import.meta.url),
+    "utf8",
+  );
+
+  assert.match(app, /const viewerStatus = identityStatuses\.maya \?\? "revoked"/);
+  assert.match(app, /status: viewerStatus/);
+  assert.doesNotMatch(app, /activeSubject/);
 });
 
 test("tampered role directories fail validation", () => {

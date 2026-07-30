@@ -1,3 +1,5 @@
+import { isRecord } from "./validation.ts";
+
 export const roleNames = [
   "root",
   "maintainer",
@@ -45,6 +47,7 @@ export type AuthorizationSubject = {
 };
 
 export type RoleDirectory = Record<string, RoleAssignment[]>;
+export type IdentityStatusDirectory = Record<string, IdentityStatus>;
 
 export type Permission =
   | "platform:manage"
@@ -66,9 +69,6 @@ export const roleAssignmentKey = (assignment: RoleAssignment): string =>
   assignment.scope === "platform"
     ? `${assignment.role}:platform`
     : `${assignment.role}:${assignment.scope}:${assignment.scopeId}`;
-
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === "object" && value !== null && !Array.isArray(value);
 
 const isScopeId = (value: unknown): value is string =>
   typeof value === "string" &&
@@ -116,6 +116,22 @@ export const isRoleDirectory = (value: unknown): value is RoleDirectory => {
     validEntries &&
     entries.some(([, assignments]) =>
       hasRole(assignments as RoleAssignment[], "root"),
+    )
+  );
+};
+
+export const isIdentityStatusDirectory = (
+  value: unknown,
+): value is IdentityStatusDirectory => {
+  if (!isRecord(value)) return false;
+  const entries = Object.entries(value);
+  return (
+    entries.length > 0 &&
+    entries.length <= 1_000 &&
+    entries.every(
+      ([userId, status]) =>
+        /^[a-zA-Z0-9_-]{1,64}$/.test(userId) &&
+        identityStatuses.some((candidate) => candidate === status),
     )
   );
 };
@@ -210,6 +226,15 @@ export const can = (
   context: AuthorizationContext = {},
 ): boolean => {
   if (subject.status !== "active") return false;
+  if (
+    (permission === "community:transfer" ||
+      permission === "community:manage") &&
+    !context.communityId
+  ) {
+    return false;
+  }
+  if (permission === "event:present" && !context.eventId) return false;
+
   const { assignments } = subject;
   if (hasRole(assignments, "root")) return true;
 

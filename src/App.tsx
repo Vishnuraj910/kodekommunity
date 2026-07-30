@@ -49,10 +49,13 @@ import type {
 import {
   lazy,
   Suspense,
+  useCallback,
   useEffect,
   useMemo,
   useRef,
   useState,
+  type Dispatch,
+  type SetStateAction,
 } from "react";
 import {
   communities,
@@ -65,16 +68,18 @@ import {
   type Person,
 } from "./data";
 import {
-  activeSubject,
   assignmentScope,
   can,
   hasRole,
+  isIdentityStatusDirectory,
   isRoleDirectory,
   roleAssignmentKey,
   roleDefinitions,
   roleNames,
   toggleAssignment,
   type AuthorizationContext,
+  type AuthorizationSubject,
+  type IdentityStatusDirectory,
   type Permission,
   type RoleAssignment,
   type RoleDirectory,
@@ -149,24 +154,41 @@ function useBrowserState<T>(
   storageKind: "local" | "session" = "local",
   ttlMs?: number,
 ) {
-  const storage =
-    storageKind === "local" ? window.localStorage : window.sessionStorage;
+  const storage = useMemo(() => {
+    try {
+      return storageKind === "local"
+        ? window.localStorage
+        : window.sessionStorage;
+    } catch {
+      return null;
+    }
+  }, [storageKind]);
+  const shouldPersist = useRef(false);
   const [value, setValue] = useState<T>(() => {
-    return readStoredState(storage, key, initial, validate);
+    return storage
+      ? readStoredState(storage, key, initial, validate)
+      : initial;
   });
 
   useEffect(() => {
+    if (!storage || !shouldPersist.current) return;
+    shouldPersist.current = false;
     writeStoredState(storage, key, value, ttlMs);
   }, [key, storage, ttlMs, value]);
 
-  return [value, setValue] as const;
+  const setStoredValue = useCallback<Dispatch<SetStateAction<T>>>((next) => {
+    shouldPersist.current = true;
+    setValue(next);
+  }, []);
+
+  return [value, setStoredValue] as const;
 }
 
 const canPreview = (
-  assignments: readonly RoleAssignment[],
+  subject: AuthorizationSubject,
   permission: Permission,
   context: AuthorizationContext = {},
-): boolean => can(activeSubject(assignments), permission, context);
+): boolean => can(subject, permission, context);
 
 function useModalKeyboard(
   dialogRef: React.RefObject<HTMLElement | null>,
@@ -309,23 +331,23 @@ function Sidebar({
   page,
   onNavigate,
   onCreate,
-  assignments,
+  subject,
   activeRole,
 }: {
   page: Page;
   onNavigate: (page: Page) => void;
   onCreate: () => void;
-  assignments: RoleAssignment[];
+  subject: AuthorizationSubject;
   activeRole: RoleName | "all";
 }): React.JSX.Element {
   const visibleNavItems = navItems.filter(
     (item) =>
       item.id !== "access" ||
-      canPreview(assignments, "platform:manage") ||
-      canPreview(assignments, "platform:maintain"),
+      canPreview(subject, "platform:manage") ||
+      canPreview(subject, "platform:maintain"),
   );
   const primaryRole =
-    roleNames.find((role) => hasRole(assignments, role)) ?? "user";
+    roleNames.find((role) => hasRole(subject.assignments, role)) ?? "user";
 
   return (
     <aside className="sidebar">
@@ -2040,14 +2062,14 @@ function SettingsPage({
   theme,
   onTheme,
   onToast,
-  assignments,
+  subject,
   onClearLocalData,
   onOpenAccess,
 }: {
   theme: "light" | "dark";
   onTheme: (theme: "light" | "dark") => void;
   onToast: (message: string) => void;
-  assignments: RoleAssignment[];
+  subject: AuthorizationSubject;
   onClearLocalData: () => void;
   onOpenAccess: () => void;
 }): React.JSX.Element {
@@ -2149,7 +2171,7 @@ function SettingsPage({
               </p>
             </div>
             <div className="account-role-list">
-              {assignments.map((assignment) => (
+              {subject.assignments.map((assignment) => (
                 <div key={`${assignment.role}-${assignmentScope(assignment)}`}>
                   <span
                     className={`role-symbol role-${roleDefinitions[assignment.role].tone}`}
@@ -2171,8 +2193,8 @@ function SettingsPage({
                 </div>
               ))}
             </div>
-            {(canPreview(assignments, "platform:manage") ||
-              canPreview(assignments, "platform:maintain")) && (
+            {(canPreview(subject, "platform:manage") ||
+              canPreview(subject, "platform:maintain")) && (
               <Button
                 variant="secondary"
                 size="sm"
@@ -2382,11 +2404,11 @@ function FloatingRoleSwitcher({
 
 function AccessPage({
   directory,
-  viewerAssignments,
+  viewerSubject,
   onToggleAssignment,
 }: {
   directory: RoleDirectory;
-  viewerAssignments: RoleAssignment[];
+  viewerSubject: AuthorizationSubject;
   onToggleAssignment: (
     userId: string,
     assignment: RoleAssignment,
@@ -2394,7 +2416,7 @@ function AccessPage({
 }): React.JSX.Element {
   const [query, setQuery] = useState("");
   const [roleFilter, setRoleFilter] = useState<RoleName | "all">("all");
-  const canEdit = canPreview(viewerAssignments, "platform:manage");
+  const canEdit = canPreview(viewerSubject, "platform:manage");
   const rootCount = Object.values(directory).filter((assignments) =>
     hasRole(assignments, "root"),
   ).length;
@@ -2806,6 +2828,13 @@ const initialRoleDirectory: RoleDirectory = {
   ],
 };
 
+const initialIdentityStatuses: IdentityStatusDirectory = {
+  maya: "active",
+  priya: "active",
+  lena: "active",
+  jon: "active",
+};
+
 function App(): React.JSX.Element {
   const [page, setPage] = useState<Page>("home");
   const [theme, setTheme] = useBrowserState<"light" | "dark">(
@@ -2857,6 +2886,13 @@ function App(): React.JSX.Element {
     "local",
     ONE_DAY_MS,
   );
+  const [identityStatuses] = useBrowserState<IdentityStatusDirectory>(
+    "kommunity-identity-statuses",
+    initialIdentityStatuses,
+    isIdentityStatusDirectory,
+    "local",
+    ONE_DAY_MS,
+  );
   const [activeRoleKey, setActiveRoleKey] = useBrowserState(
     "kommunity-active-role",
     "all",
@@ -2868,9 +2904,11 @@ function App(): React.JSX.Element {
   const [toast, setToast] = useState<ToastState>(null);
   const viewerAssignments =
     roleDirectory.maya ?? initialRoleDirectory.maya;
+  const viewerStatus = identityStatuses.maya ?? "revoked";
   const canSwitchRoles =
-    hasRole(viewerAssignments, "root") ||
-    hasRole(viewerAssignments, "maintainer");
+    viewerStatus === "active" &&
+    (hasRole(viewerAssignments, "root") ||
+      hasRole(viewerAssignments, "maintainer"));
   const activeRoleAssignment =
     activeRoleKey === "all"
       ? undefined
@@ -2884,6 +2922,10 @@ function App(): React.JSX.Element {
           roleAssignmentKey(assignment) === activeRoleKey,
       )
     : viewerAssignments;
+  const effectiveViewerSubject: AuthorizationSubject = {
+    status: viewerStatus,
+    assignments: effectiveViewerAssignments,
+  };
   const activeRole = activeRoleAssignment?.role ?? "all";
 
   useEffect(() => {
@@ -2927,10 +2969,14 @@ function App(): React.JSX.Element {
       : viewerAssignments;
 
     setActiveRoleKey(nextAssignment ? key : "all");
+    const nextSubject: AuthorizationSubject = {
+      status: viewerStatus,
+      assignments: nextAssignments,
+    };
     if (
       page === "access" &&
-      !canPreview(nextAssignments, "platform:manage") &&
-      !canPreview(nextAssignments, "platform:maintain")
+      !canPreview(nextSubject, "platform:manage") &&
+      !canPreview(nextSubject, "platform:maintain")
     ) {
       setPage("home");
     }
@@ -3016,7 +3062,7 @@ function App(): React.JSX.Element {
     target: RoleAssignment,
   ) => {
     const role = target.role;
-    if (!canPreview(effectiveViewerAssignments, "platform:manage")) {
+    if (!canPreview(effectiveViewerSubject, "platform:manage")) {
       showToast("Only root can change role assignments");
       return;
     }
@@ -3053,8 +3099,12 @@ function App(): React.JSX.Element {
     );
     if (!confirmed) return;
 
-    await clearKommunityBrowserData();
-    window.location.reload();
+    try {
+      await clearKommunityBrowserData();
+      window.location.reload();
+    } catch {
+      showToast("Could not clear all local data. Please try again.");
+    }
   };
 
   const pageContent = useMemo(() => {
@@ -3092,7 +3142,7 @@ function App(): React.JSX.Element {
             onToast={showToast}
             onNavigate={navigate}
             canManageCommunity={canPreview(
-              effectiveViewerAssignments,
+              effectiveViewerSubject,
               "community:manage",
               { communityId: "c1" },
             )}
@@ -3105,11 +3155,11 @@ function App(): React.JSX.Element {
             onToggleGoing={toggleGoing}
             onNotify={() => navigate("notifications")}
             canManageCommunity={canPreview(
-              effectiveViewerAssignments,
+              effectiveViewerSubject,
               "community:manage",
               { communityId: "c1" },
             )}
-            canPresent={canPreview(effectiveViewerAssignments, "event:present", {
+            canPresent={canPreview(effectiveViewerSubject, "event:present", {
               communityId: "c1",
               eventId: "e1",
             })}
@@ -3137,7 +3187,7 @@ function App(): React.JSX.Element {
         return (
           <AccessPage
             directory={roleDirectory}
-            viewerAssignments={effectiveViewerAssignments}
+            viewerSubject={effectiveViewerSubject}
             onToggleAssignment={updateMemberRole}
           />
         );
@@ -3155,8 +3205,8 @@ function App(): React.JSX.Element {
             theme={theme}
             onTheme={setTheme}
             onToast={showToast}
-            assignments={effectiveViewerAssignments}
-            onClearLocalData={() => void clearLocalData()}
+            subject={effectiveViewerSubject}
+            onClearLocalData={clearLocalData}
             onOpenAccess={() => navigate("access")}
           />
         );
@@ -3172,6 +3222,7 @@ function App(): React.JSX.Element {
     roleDirectory,
     savedPosts,
     theme,
+    viewerStatus,
   ]);
 
   if (!onboarded) {
@@ -3184,7 +3235,7 @@ function App(): React.JSX.Element {
         page={page}
         onNavigate={navigate}
         onCreate={() => setCreateOpen(true)}
-        assignments={effectiveViewerAssignments}
+        subject={effectiveViewerSubject}
         activeRole={activeRole}
       />
       <MobileHeader page={page} onNavigate={navigate} />

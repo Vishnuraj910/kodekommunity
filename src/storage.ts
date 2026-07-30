@@ -1,3 +1,5 @@
+import { isRecord } from "./validation.ts";
+
 export type StorageAdapter = Pick<
   Storage,
   "getItem" | "removeItem" | "setItem"
@@ -5,6 +7,8 @@ export type StorageAdapter = Pick<
 
 export type ClearableStorageAdapter = StorageAdapter &
   Pick<Storage, "key" | "length">;
+
+export type CacheStorageAdapter = Pick<CacheStorage, "delete" | "keys">;
 
 export type StateValidator<T> = (value: unknown) => value is T;
 
@@ -18,9 +22,6 @@ const STORAGE_VERSION = 1;
 const MAX_STORED_BYTES = 1_000_000;
 const APP_STORAGE_PREFIX = "kommunity-";
 const APP_CACHE_PREFIX = "kommunity-shell-";
-
-const isRecord = (value: unknown): value is Record<string, unknown> =>
-  typeof value === "object" && value !== null && !Array.isArray(value);
 
 const isStoredState = (
   value: unknown,
@@ -39,10 +40,9 @@ export const readStoredState = <T>(
   validate: StateValidator<T>,
   now = Date.now(),
 ): T => {
-  const raw = storage.getItem(key);
-  if (!raw) return initial;
-
   try {
+    const raw = storage.getItem(key);
+    if (!raw) return initial;
     if (raw.length > MAX_STORED_BYTES) {
       storage.removeItem(key);
       return initial;
@@ -108,16 +108,29 @@ export const clearStoredNamespace = (
   return keys.length;
 };
 
-export const clearKommunityBrowserData = async (): Promise<void> => {
-  clearStoredNamespace(window.localStorage);
-  clearStoredNamespace(window.sessionStorage);
+export type BrowserDataStores = {
+  localStorage: ClearableStorageAdapter;
+  sessionStorage: ClearableStorageAdapter;
+  caches?: CacheStorageAdapter;
+};
 
-  if ("caches" in window) {
-    const keys = await window.caches.keys();
+export const clearKommunityBrowserData = async (
+  stores: BrowserDataStores = {
+    localStorage: window.localStorage,
+    sessionStorage: window.sessionStorage,
+    caches: "caches" in window ? window.caches : undefined,
+  },
+): Promise<void> => {
+  clearStoredNamespace(stores.localStorage);
+  clearStoredNamespace(stores.sessionStorage);
+
+  const cacheStorage = stores.caches;
+  if (cacheStorage) {
+    const keys = await cacheStorage.keys();
     await Promise.all(
       keys
         .filter((key) => key.startsWith(APP_CACHE_PREFIX))
-        .map((key) => window.caches.delete(key)),
+        .map((key) => cacheStorage.delete(key)),
     );
   }
 };
