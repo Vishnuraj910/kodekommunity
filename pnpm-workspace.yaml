@@ -1,5 +1,6 @@
 packages:
   - "."
+  - "server"
 
 # Hold every direct and transitive release for seven days before pnpm may
 # resolve it. This applies to installs and future updates.
@@ -15,4 +16,7 @@ verifyStoreIntegrity: true
 # Vite requires esbuild's platform binary setup. No other dependency lifecycle
 # scripts are permitted.
 allowBuilds:
+  "@prisma/client": true
+  "@prisma/engines": true
   esbuild: true
+  prisma: true

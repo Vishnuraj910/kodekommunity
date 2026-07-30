@@ -309,6 +309,12 @@ Use this portable Markdown schema:
 | --- | --- | --- |
 | Add composite indexes for social-graph lookups and feed sorting based on measured queries. | **Backend:** Update `server/prisma/schema.prisma` with reviewed `@@index` definitions. Generate a safe Prisma migration and validate it against production-like data. | **Performance:** Compare query plans and p50/p95 feed latency before and after. **Database:** Track write amplification, index size, lock duration, and migration rollback readiness. |
 
+### Active plan 3: Tenant-aware backend foundation
+
+| Defined plan and implementation | Architectural and code impact | Key factors and metrics |
+| --- | --- | --- |
+| Establish the first end-to-end Fastify, Prisma, and PostgreSQL backend while keeping the existing root Vite client in place until a separately verified client-folder migration is justified. | **Backend:** Add the designated `server/` layer with environment, Prisma, authentication, authorization, OpenAPI, route, and service modules. **Data:** Add reviewed migrations for identities, scoped roles, communities, events, conversations, messages, idempotency, and audit. **Frontend:** Add a narrow API service and connect core RSVP, messaging, and role-management flows through the Vite `/api` proxy. | **Security:** All protected operations require an active database identity and object-scoped authorization. **Reliability:** Privileged mutations are idempotent and audited. **Performance:** List endpoints are bounded and use predicate-aligned indexes. **Recovery:** Migrations are additive; roll forward with a corrective migration or revert application code without deleting persisted data. |
+
 ## Definition of done
 
 A change is complete only when:

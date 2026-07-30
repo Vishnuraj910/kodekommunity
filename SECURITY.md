@@ -1,9 +1,9 @@
 # Kommunity security review
 
-This document records the security model for the current standalone prototype
-and the controls required before it becomes a production multi-tenant service.
-The browser application is a permission preview; it is not an authorization
-boundary.
+This document records the security model for the current local full-stack
+application and the controls required before it becomes a production
+multi-tenant service. The browser's role switcher is a permission preview; it
+is not an authorization boundary.
 
 ## Threat model
 
@@ -34,8 +34,9 @@ boundary.
 | --- | --- | --- |
 | React UI | Implemented prototype | All browser state and input are untrusted |
 | Service worker and cache | Implemented | Offline content must not mix origins, users, or API data |
-| API, jobs, webhooks, realtime | Not implemented | Must authenticate and carry tenant context at ingress |
-| Database, search, analytics | Not implemented | Every record, query, index, and event requires tenant context |
+| API | Local Fastify API implemented | Development identity selection is not production authentication |
+| Jobs, webhooks, realtime | Not implemented | Must authenticate and carry tenant context at ingress |
+| Database | Local PostgreSQL/Prisma persistence implemented | Production credentials, backups, encryption, and tenant operations remain deployment controls |
 | Object storage and exports | Not implemented | Paths and download authorization require tenant and object checks |
 | Support/admin tools | UI preview only | Production operations require strong auth, attribution, and audit |
 
@@ -49,8 +50,8 @@ boundary.
 | S4 | Authorization modeled roles but not invited, disabled, or revoked identity state. | Authentication lifecycle | High for production | Authorize an explicit subject and fail closed unless its identity status is `active`. | Negative tests for every inactive status. | Session revocation and token invalidation require the future backend. |
 | S5 | Private message content persisted indefinitely in local storage and there was no user-facing device-data purge. | Privacy / recovery | Medium | Keep messages in session storage with expiry and provide a confirmed local-data purge that also clears owned caches. | Storage expiry and purge tests; browser verification. | Device/browser backups may retain deleted browser data outside application control. |
 | S6 | Dependency ranges allow future drift even though installation is delayed seven days. | Supply chain | Medium | Pin direct dependencies to reviewed lockfile versions and retain strict pnpm release-age and lifecycle-script policy. | Frozen install, lockfile check, test, typecheck, build. | Transitive vulnerabilities still require ongoing advisories and patch review. |
-| S7 | No backend exists for server authorization, tenant-aware persistence, audit, rate limits, idempotency, or session revocation. | API / data / operations | Critical production blocker | Implement the documented Fastify, Zod, Prisma, PostgreSQL architecture before handling real accounts or private data. | Integration tests exercise cross-tenant, revoked-session, retry, export, and audit cases. | Remains open until a production backend is implemented. |
-| S8 | Production secrets and OAuth flows are documented but not loaded or validated because no server exists. | Secrets / authentication | Critical production blocker | Load secrets only in the server, validate them at startup, use a managed secret store, rotate safely, and never expose secrets through `VITE_` variables. | Startup contract tests and secret-scanning in CI. | Remains open until production infrastructure exists. |
+| S7 | The local API now enforces active identities, object participation, scoped roles, bounded queries, rate limits, idempotency, and attributed audit. It does not yet provide production login, session revocation, jobs, webhooks, exports, or storage authorization. | API / data / operations | Critical production blocker, partially implemented locally | Replace development identity selection with production authentication and implement the remaining ingress and data-movement paths before handling real accounts or private data. | Integration tests cover inactive identities, cross-scope privilege escalation, nonparticipants, retries, and the final-root invariant. Add revoked-session, export, job, webhook, and storage cases with those features. | Remains open until every production ingress uses verified identity and tenant context. |
+| S8 | Server configuration is validated and demo authentication is rejected in production, but production secrets, OAuth flows, and managed secret loading are not implemented. | Secrets / authentication | Critical production blocker | Load secrets only in the server, validate them at startup, use a managed secret store, rotate safely, and never expose secrets through `VITE_` variables. | Startup contract tests and secret-scanning in CI. | Remains open until production authentication and infrastructure exist. |
 
 ## Required production negative cases
 
@@ -76,13 +77,15 @@ The following cases are release gates for the future backend:
    lifecycle, and scoped authorization negative tests.
 3. **Privacy lifecycle:** session-only expiring messages and confirmed device
    data/cache purge.
-4. **Delivery boundary:** pinned dependencies, frozen verification, and
+4. **Backend boundary:** tenant-aware persistence, active-identity checks,
+   participant checks, scoped roles, idempotency, audit, and rate limits.
+5. **Delivery boundary:** pinned dependencies, frozen verification, and
    production security requirements in the operator documentation.
 
 ## Production acceptance boundary
 
 Do not process real credentials, private messages, payments, or regulated data
-until S7 and S8 are implemented. The production design must additionally define
+until S7 and S8 are fully implemented. The production design must additionally define
 region placement, encryption-key ownership, backup access, retention and legal
 deletion, incident response, support impersonation controls, and recovery
 objectives.

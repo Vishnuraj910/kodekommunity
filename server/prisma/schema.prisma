@@ -1,0 +1,260 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum IdentityStatus {
+  ACTIVE
+  INVITED
+  DISABLED
+  REVOKED
+}
+
+enum RoleName {
+  ROOT
+  MAINTAINER
+  SUPER_ADMIN
+  ADMIN
+  PRESENTER
+  USER
+}
+
+enum RoleScope {
+  PLATFORM
+  COMMUNITY
+  EVENT
+}
+
+enum MembershipStatus {
+  ACTIVE
+  INVITED
+  LEFT
+  REMOVED
+}
+
+enum CommunityVisibility {
+  PUBLIC
+  PRIVATE
+}
+
+enum RsvpStatus {
+  GOING
+  NOT_GOING
+}
+
+enum ConversationType {
+  COMMUNITY
+  DIRECT
+  EVENT
+}
+
+enum AvatarTone {
+  INK
+  BLUE
+  CORAL
+  ORANGE
+  PLUM
+  SAGE
+  VIOLET
+}
+
+model User {
+  id          String         @id @default(cuid()) @db.VarChar(64)
+  handle      String         @unique @db.VarChar(32)
+  displayName String         @db.VarChar(120)
+  initials    String         @db.VarChar(8)
+  avatarTone  AvatarTone     @default(INK)
+  email       String?        @unique @db.VarChar(320)
+  status      IdentityStatus @default(INVITED)
+  createdAt   DateTime       @default(now()) @db.Timestamptz(3)
+  updatedAt   DateTime       @updatedAt @db.Timestamptz(3)
+
+  roleAssignments         RoleAssignment[]
+  memberships             CommunityMember[]
+  createdEvents           Event[]                   @relation("EventCreator")
+  rsvps                   EventRsvp[]
+  conversationMemberships ConversationParticipant[]
+  messages                Message[]
+  auditEvents             AuditLog[]                @relation("AuditActor")
+  idempotencyRecords      IdempotencyRecord[]
+
+  @@index([displayName, id])
+}
+
+model Community {
+  id          String              @id @default(cuid()) @db.VarChar(64)
+  slug        String              @unique @db.VarChar(80)
+  name        String              @db.VarChar(120)
+  description String              @db.VarChar(1000)
+  visibility  CommunityVisibility @default(PUBLIC)
+  createdAt   DateTime            @default(now()) @db.Timestamptz(3)
+  updatedAt   DateTime            @updatedAt @db.Timestamptz(3)
+
+  memberships     CommunityMember[]
+  roleAssignments RoleAssignment[]
+  events          Event[]
+  conversations   Conversation[]
+  auditEvents     AuditLog[]
+
+  @@index([name, id])
+}
+
+model CommunityMember {
+  communityId String           @db.VarChar(64)
+  userId      String           @db.VarChar(64)
+  status      MembershipStatus @default(ACTIVE)
+  joinedAt    DateTime         @default(now()) @db.Timestamptz(3)
+  updatedAt   DateTime         @updatedAt @db.Timestamptz(3)
+
+  community Community @relation(fields: [communityId], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([communityId, userId])
+  @@index([userId, status])
+}
+
+model RoleAssignment {
+  id          String    @id @default(cuid()) @db.VarChar(64)
+  userId      String    @db.VarChar(64)
+  role        RoleName
+  scope       RoleScope
+  communityId String?   @db.VarChar(64)
+  eventId     String?   @db.VarChar(64)
+  createdAt   DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt   DateTime  @updatedAt @db.Timestamptz(3)
+
+  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  community Community? @relation(fields: [communityId], references: [id], onDelete: Cascade)
+  event     Event?     @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  @@index([userId, scope])
+  @@index([communityId, role])
+  @@index([eventId, role])
+}
+
+model Event {
+  id          String   @id @default(cuid()) @db.VarChar(64)
+  communityId String   @db.VarChar(64)
+  slug        String   @db.VarChar(100)
+  title       String   @db.VarChar(160)
+  description String   @db.VarChar(2000)
+  startsAt    DateTime @db.Timestamptz(3)
+  endsAt      DateTime @db.Timestamptz(3)
+  location    String   @db.VarChar(240)
+  createdById String   @db.VarChar(64)
+  createdAt   DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt   DateTime @updatedAt @db.Timestamptz(3)
+
+  community       Community        @relation(fields: [communityId], references: [id], onDelete: Cascade)
+  createdBy       User             @relation("EventCreator", fields: [createdById], references: [id], onDelete: Restrict)
+  roleAssignments RoleAssignment[]
+  rsvps           EventRsvp[]
+  auditEvents     AuditLog[]
+
+  @@unique([communityId, slug])
+  @@index([communityId, startsAt])
+  @@index([startsAt, id])
+}
+
+model EventRsvp {
+  eventId   String     @db.VarChar(64)
+  userId    String     @db.VarChar(64)
+  status    RsvpStatus
+  createdAt DateTime   @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime   @updatedAt @db.Timestamptz(3)
+
+  event Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([eventId, userId])
+  @@index([userId, updatedAt])
+}
+
+model Conversation {
+  id          String           @id @default(cuid()) @db.VarChar(64)
+  communityId String           @db.VarChar(64)
+  title       String           @db.VarChar(160)
+  type        ConversationType
+  createdAt   DateTime         @default(now()) @db.Timestamptz(3)
+  updatedAt   DateTime         @updatedAt @db.Timestamptz(3)
+
+  community    Community                 @relation(fields: [communityId], references: [id], onDelete: Cascade)
+  participants ConversationParticipant[]
+  messages     Message[]
+
+  @@index([communityId, updatedAt])
+  @@index([updatedAt, id])
+}
+
+model ConversationParticipant {
+  conversationId String    @db.VarChar(64)
+  userId         String    @db.VarChar(64)
+  joinedAt       DateTime  @default(now()) @db.Timestamptz(3)
+  lastReadAt     DateTime? @db.Timestamptz(3)
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([conversationId, userId])
+  @@index([userId, joinedAt])
+}
+
+model Message {
+  id             String    @id @default(cuid()) @db.VarChar(64)
+  conversationId String    @db.VarChar(64)
+  authorId       String    @db.VarChar(64)
+  body           String    @db.VarChar(4000)
+  createdAt      DateTime  @default(now()) @db.Timestamptz(3)
+  editedAt       DateTime? @db.Timestamptz(3)
+  deletedAt      DateTime? @db.Timestamptz(3)
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  author       User         @relation(fields: [authorId], references: [id], onDelete: Restrict)
+
+  @@index([conversationId, createdAt, id])
+  @@index([conversationId, createdAt], map: "Message_conversationId_createdAt_idx")
+  @@index([authorId, createdAt])
+}
+
+model AuditLog {
+  id             String   @id @default(cuid()) @db.VarChar(64)
+  actorUserId    String   @db.VarChar(64)
+  action         String   @db.VarChar(120)
+  targetType     String   @db.VarChar(80)
+  targetId       String   @db.VarChar(64)
+  communityId    String?  @db.VarChar(64)
+  eventId        String?  @db.VarChar(64)
+  idempotencyKey String?  @db.VarChar(128)
+  metadata       Json
+  createdAt      DateTime @default(now()) @db.Timestamptz(3)
+
+  actor     User       @relation("AuditActor", fields: [actorUserId], references: [id], onDelete: Restrict)
+  community Community? @relation(fields: [communityId], references: [id], onDelete: SetNull)
+  event     Event?     @relation(fields: [eventId], references: [id], onDelete: SetNull)
+
+  @@index([actorUserId, createdAt])
+  @@index([communityId, createdAt])
+  @@index([targetType, targetId, createdAt])
+  @@index([createdAt, id])
+}
+
+model IdempotencyRecord {
+  id          String   @id @default(cuid()) @db.VarChar(64)
+  actorUserId String   @db.VarChar(64)
+  key         String   @db.VarChar(128)
+  action      String   @db.VarChar(120)
+  requestHash String   @db.Char(64)
+  statusCode  Int
+  response    Json
+  createdAt   DateTime @default(now()) @db.Timestamptz(3)
+  expiresAt   DateTime @db.Timestamptz(3)
+
+  actor User @relation(fields: [actorUserId], references: [id], onDelete: Cascade)
+
+  @@unique([actorUserId, key, action])
+  @@index([expiresAt])
+}

@@ -1,7 +1,15 @@
 # Kommunity
 
-A privacy-first community product prototype built from the supplied Kommunity
-product specification. It includes the complete responsive product shell:
+A privacy-first community application built from the supplied Kommunity
+product specification. It includes a responsive React client and a local
+Fastify, Prisma, and PostgreSQL backend for:
+
+- authenticated development identities and multi-role access
+- tenant-aware communities, events, RSVPs, conversations, and messages
+- root-only idempotent role changes with attributed audit records
+- validated OpenAPI contracts and live/readiness health checks
+
+The product shell also includes:
 community discovery, groups, events and RSVP state, connections, conversations,
 notifications, onboarding, profile/privacy settings, dark mode, and local
 persistence.
@@ -28,32 +36,47 @@ without changing the user's stored assignments.
 
 ## Run locally
 
-Requirements: Node.js 22.6+ and pnpm 11+ (the repository declares pnpm 11.15.1,
-published more than seven days before adoption, for reproducibility).
+Requirements:
+
+- Node.js 22.6+
+- pnpm 11+ (the repository pins pnpm 11.15.1)
+- PostgreSQL 16 running locally
 
 ```bash
 pnpm install
-pnpm dev
+createdb -h 127.0.0.1 -p 5432 kommunity_dev
+cp .env.example server/.env
+# Edit server/.env and replace YOUR_LOCAL_USER with your PostgreSQL role.
+pnpm db:migrate
+pnpm db:seed
+pnpm dev:all
 ```
 
-Open [http://127.0.0.1:4173](http://127.0.0.1:4173).
+Open the app at [http://127.0.0.1:4173](http://127.0.0.1:4173), the API
+documentation at [http://127.0.0.1:8787/docs](http://127.0.0.1:8787/docs), and
+the readiness check at
+[http://127.0.0.1:8787/api/v1/health/ready](http://127.0.0.1:8787/api/v1/health/ready).
 
-No environment variables or external services are needed for the local
-experience. Preferences and non-sensitive preview state use versioned,
-validated local storage. Private message previews use session storage and
-expire after eight hours. Settings provides a confirmed action to remove all
-Kommunity-owned browser storage and offline caches.
+No third-party API keys are required for local development. The
+`x-kommunity-user-id` development identity selector is enabled only when
+`ALLOW_DEMO_AUTH=true`; configuration validation rejects it in production.
+Preferences and non-sensitive preview state use versioned, validated local
+storage. Private message previews use session storage and expire after eight
+hours. Settings provides a confirmed action to remove all Kommunity-owned
+browser storage and offline caches.
 
-Role editing in this standalone build is a local permission preview, not a
-security boundary. The production architecture described in `AGENTS.md`
-requires every privileged operation to be authorized and audited by the server.
+RSVPs, messages, role assignments, and audit events are persisted in
+PostgreSQL. The client role switcher remains a permission-preview tool; the
+server always authorizes against the authenticated database identity and never
+trusts the selected preview role.
 
 ## Verification
 
 ```bash
 pnpm typecheck
-pnpm test
-pnpm build
+pnpm test:all
+pnpm build:all
+pnpm db:status
 ```
 
 ## Dependency safety
@@ -67,8 +90,8 @@ publish timestamps is rejected.
 
 [SECURITY.md](SECURITY.md) contains the threat model, ranked findings,
 implemented browser controls, required negative cases, and production blockers.
-This prototype must not process real credentials or private production data
-until server-side authentication, tenant isolation, audit, idempotency,
+This local backend must not process real production credentials or regulated
+data until production authentication, session revocation, storage isolation,
 retention, recovery, and secret-management controls are implemented.
 
 Run the production dependency audit with:
@@ -79,6 +102,6 @@ pnpm security:audit
 
 ## Production integrations
 
-`.env.example` lists the optional OAuth, email, database, object-storage, and
-signing values intended for the production backend. They are not read by this
-standalone local product demo.
+`.env.example` documents the local server settings and optional future OAuth,
+email, object-storage, and signing values. Third-party values must be loaded
+server-side from a managed secret store in production.
