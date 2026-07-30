@@ -141,3 +141,8 @@ dist
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 .vite/
+
+# Local operating-system and generated TypeScript artifacts
+.DS_Store
+/vite.config.js
+/vite.config.d.ts

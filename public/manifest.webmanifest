@@ -1,0 +1,10 @@
+{
+  "name": "Kommunity",
+  "short_name": "Kommunity",
+  "description": "A calmer, privacy-first place for communities to gather.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#000000",
+  "orientation": "portrait-primary"
+}
