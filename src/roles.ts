@@ -30,6 +30,22 @@ export type AuthorizationContext = {
   eventId?: string;
 };
 
+export const identityStatuses = [
+  "active",
+  "invited",
+  "disabled",
+  "revoked",
+] as const;
+
+export type IdentityStatus = (typeof identityStatuses)[number];
+
+export type AuthorizationSubject = {
+  status: IdentityStatus;
+  assignments: readonly RoleAssignment[];
+};
+
+export type RoleDirectory = Record<string, RoleAssignment[]>;
+
 export type Permission =
   | "platform:manage"
   | "platform:maintain"
@@ -50,6 +66,66 @@ export const roleAssignmentKey = (assignment: RoleAssignment): string =>
   assignment.scope === "platform"
     ? `${assignment.role}:platform`
     : `${assignment.role}:${assignment.scope}:${assignment.scopeId}`;
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null && !Array.isArray(value);
+
+const isScopeId = (value: unknown): value is string =>
+  typeof value === "string" &&
+  value.length > 0 &&
+  value.length <= 128 &&
+  /^[a-zA-Z0-9_-]+$/.test(value);
+
+export const isRoleAssignment = (
+  value: unknown,
+): value is RoleAssignment => {
+  if (!isRecord(value) || typeof value.role !== "string") return false;
+
+  if (
+    value.role === "root" ||
+    value.role === "maintainer" ||
+    value.role === "user"
+  ) {
+    return value.scope === "platform" && !("scopeId" in value);
+  }
+  if (value.role === "super_admin" || value.role === "admin") {
+    return value.scope === "community" && isScopeId(value.scopeId);
+  }
+  if (value.role === "presenter") {
+    return value.scope === "event" && isScopeId(value.scopeId);
+  }
+  return false;
+};
+
+export const isRoleDirectory = (value: unknown): value is RoleDirectory => {
+  if (!isRecord(value)) return false;
+  const entries = Object.entries(value);
+  if (!entries.length || entries.length > 1_000) return false;
+
+  const validEntries = entries.every(
+    ([userId, assignments]) =>
+      /^[a-zA-Z0-9_-]{1,64}$/.test(userId) &&
+      Array.isArray(assignments) &&
+      assignments.length > 0 &&
+      assignments.length <= 100 &&
+      assignments.every(isRoleAssignment) &&
+      hasRole(assignments, "user"),
+  );
+
+  return (
+    validEntries &&
+    entries.some(([, assignments]) =>
+      hasRole(assignments as RoleAssignment[], "root"),
+    )
+  );
+};
+
+export const activeSubject = (
+  assignments: readonly RoleAssignment[],
+): AuthorizationSubject => ({
+  status: "active",
+  assignments,
+});
 
 export const roleDefinitions: Record<RoleName, RoleDefinition> = {
   root: {
@@ -129,10 +205,12 @@ export const hasRole = (
   }) ?? false;
 
 export const can = (
-  assignments: readonly RoleAssignment[] | undefined,
+  subject: AuthorizationSubject,
   permission: Permission,
   context: AuthorizationContext = {},
 ): boolean => {
+  if (subject.status !== "active") return false;
+  const { assignments } = subject;
   if (hasRole(assignments, "root")) return true;
 
   switch (permission) {
@@ -156,7 +234,7 @@ export const can = (
         (Boolean(context.eventId) &&
           hasRole(assignments, "presenter", context)) ||
         (Boolean(context.communityId) &&
-          can(assignments, "community:manage", context))
+          can(subject, "community:manage", context))
       );
     case "content:participate":
       return hasRole(assignments, "user");

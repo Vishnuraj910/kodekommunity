@@ -59,21 +59,35 @@ import {
   conversations,
   events as seedEvents,
   initialMessages,
+  isMessageArray,
   people,
   type EventItem,
   type Person,
 } from "./data";
 import {
+  activeSubject,
   assignmentScope,
   can,
   hasRole,
+  isRoleDirectory,
   roleAssignmentKey,
   roleDefinitions,
   roleNames,
   toggleAssignment,
+  type AuthorizationContext,
+  type Permission,
   type RoleAssignment,
+  type RoleDirectory,
   type RoleName,
 } from "./roles";
+import {
+  isBoolean,
+  isString,
+  isStringArray,
+  readStoredState,
+  type StateValidator,
+  writeStoredState,
+} from "./storage";
 
 type Page =
   | "home"
@@ -121,23 +135,34 @@ const pageTitles: Record<Page, string> = {
   settings: "Settings",
 };
 
-function useLocalState<T>(key: string, initial: T) {
+const isTheme = (value: unknown): value is "light" | "dark" =>
+  value === "light" || value === "dark";
+
+function useBrowserState<T>(
+  key: string,
+  initial: T,
+  validate: StateValidator<T>,
+  storageKind: "local" | "session" = "local",
+  ttlMs?: number,
+) {
+  const storage =
+    storageKind === "local" ? window.localStorage : window.sessionStorage;
   const [value, setValue] = useState<T>(() => {
-    const stored = localStorage.getItem(key);
-    if (!stored) return initial;
-    try {
-      return JSON.parse(stored) as T;
-    } catch {
-      return initial;
-    }
+    return readStoredState(storage, key, initial, validate);
   });
 
   useEffect(() => {
-    localStorage.setItem(key, JSON.stringify(value));
-  }, [key, value]);
+    writeStoredState(storage, key, value, ttlMs);
+  }, [key, storage, ttlMs, value]);
 
   return [value, setValue] as const;
 }
+
+const canPreview = (
+  assignments: readonly RoleAssignment[],
+  permission: Permission,
+  context: AuthorizationContext = {},
+): boolean => can(activeSubject(assignments), permission, context);
 
 function useModalKeyboard(
   dialogRef: React.RefObject<HTMLElement | null>,
@@ -292,8 +317,8 @@ function Sidebar({
   const visibleNavItems = navItems.filter(
     (item) =>
       item.id !== "access" ||
-      can(assignments, "platform:manage") ||
-      can(assignments, "platform:maintain"),
+      canPreview(assignments, "platform:manage") ||
+      canPreview(assignments, "platform:maintain"),
   );
   const primaryRole =
     roleNames.find((role) => hasRole(assignments, role)) ?? "user";
@@ -2140,8 +2165,8 @@ function SettingsPage({
                 </div>
               ))}
             </div>
-            {(can(assignments, "platform:manage") ||
-              can(assignments, "platform:maintain")) && (
+            {(canPreview(assignments, "platform:manage") ||
+              canPreview(assignments, "platform:maintain")) && (
               <Button
                 variant="secondary"
                 size="sm"
@@ -2175,8 +2200,6 @@ function SettingsPage({
     </div>
   );
 }
-
-type RoleDirectory = Record<string, RoleAssignment[]>;
 
 const accessMembers = [
   {
@@ -2347,7 +2370,7 @@ function AccessPage({
 }): React.JSX.Element {
   const [query, setQuery] = useState("");
   const [roleFilter, setRoleFilter] = useState<RoleName | "all">("all");
-  const canEdit = can(viewerAssignments, "platform:manage");
+  const canEdit = canPreview(viewerAssignments, "platform:manage");
   const rootCount = Object.values(directory).filter((assignments) =>
     hasRole(assignments, "root"),
   ).length;
@@ -2761,45 +2784,55 @@ const initialRoleDirectory: RoleDirectory = {
 
 function App(): React.JSX.Element {
   const [page, setPage] = useState<Page>("home");
-  const [theme, setTheme] = useLocalState<"light" | "dark">(
+  const [theme, setTheme] = useBrowserState<"light" | "dark">(
     "kommunity-theme",
     "light",
+    isTheme,
   );
-  const [onboarded, setOnboarded] = useLocalState(
+  const [onboarded, setOnboarded] = useBrowserState(
     "kommunity-onboarded",
     true,
+    isBoolean,
   );
-  const [joinedIds, setJoinedIds] = useLocalState<string[]>(
+  const [joinedIds, setJoinedIds] = useBrowserState<string[]>(
     "kommunity-joined",
     communities.filter((item) => item.joined).map((item) => item.id),
+    isStringArray,
   );
-  const [joinedGroupIds, setJoinedGroupIds] = useLocalState<string[]>(
+  const [joinedGroupIds, setJoinedGroupIds] = useBrowserState<string[]>(
     "kommunity-groups",
     ["g1", "g2", "g3"],
+    isStringArray,
   );
-  const [goingIds, setGoingIds] = useLocalState<string[]>(
+  const [goingIds, setGoingIds] = useBrowserState<string[]>(
     "kommunity-going",
     seedEvents.filter((item) => item.going).map((item) => item.id),
+    isStringArray,
   );
-  const [connectedIds, setConnectedIds] = useLocalState<string[]>(
+  const [connectedIds, setConnectedIds] = useBrowserState<string[]>(
     "kommunity-connected",
     [],
+    isStringArray,
   );
-  const [savedPosts, setSavedPosts] = useLocalState<string[]>(
+  const [savedPosts, setSavedPosts] = useBrowserState<string[]>(
     "kommunity-saved",
     [],
+    isStringArray,
   );
-  const [messages, setMessages] = useLocalState(
+  const [messages, setMessages] = useBrowserState(
     "kommunity-messages",
     initialMessages,
+    isMessageArray,
   );
-  const [roleDirectory, setRoleDirectory] = useLocalState<RoleDirectory>(
+  const [roleDirectory, setRoleDirectory] = useBrowserState<RoleDirectory>(
     "kommunity-role-directory",
     initialRoleDirectory,
+    isRoleDirectory,
   );
-  const [activeRoleKey, setActiveRoleKey] = useLocalState(
+  const [activeRoleKey, setActiveRoleKey] = useBrowserState(
     "kommunity-active-role",
     "all",
+    isString,
   );
   const [createOpen, setCreateOpen] = useState(false);
   const [toast, setToast] = useState<ToastState>(null);
@@ -2866,8 +2899,8 @@ function App(): React.JSX.Element {
     setActiveRoleKey(nextAssignment ? key : "all");
     if (
       page === "access" &&
-      !can(nextAssignments, "platform:manage") &&
-      !can(nextAssignments, "platform:maintain")
+      !canPreview(nextAssignments, "platform:manage") &&
+      !canPreview(nextAssignments, "platform:maintain")
     ) {
       setPage("home");
     }
@@ -2953,7 +2986,7 @@ function App(): React.JSX.Element {
     target: RoleAssignment,
   ) => {
     const role = target.role;
-    if (!can(effectiveViewerAssignments, "platform:manage")) {
+    if (!canPreview(effectiveViewerAssignments, "platform:manage")) {
       showToast("Only root can change role assignments");
       return;
     }
@@ -3018,7 +3051,7 @@ function App(): React.JSX.Element {
             onToggle={toggleGroup}
             onToast={showToast}
             onNavigate={navigate}
-            canManageCommunity={can(
+            canManageCommunity={canPreview(
               effectiveViewerAssignments,
               "community:manage",
               { communityId: "c1" },
@@ -3031,12 +3064,12 @@ function App(): React.JSX.Element {
             goingIds={goingIds}
             onToggleGoing={toggleGoing}
             onNotify={() => navigate("notifications")}
-            canManageCommunity={can(
+            canManageCommunity={canPreview(
               effectiveViewerAssignments,
               "community:manage",
               { communityId: "c1" },
             )}
-            canPresent={can(effectiveViewerAssignments, "event:present", {
+            canPresent={canPreview(effectiveViewerAssignments, "event:present", {
               communityId: "c1",
               eventId: "e1",
             })}

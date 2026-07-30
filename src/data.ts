@@ -24,6 +24,35 @@ export type EventItem = {
   going: boolean;
 };
 
+export type MessageItem = {
+  id: string;
+  author: string;
+  initials: string;
+  color: string;
+  body: string;
+  time: string;
+  own: boolean;
+};
+
+const isBoundedString = (value: unknown, maxLength: number): value is string =>
+  typeof value === "string" && value.length <= maxLength;
+
+export const isMessageArray = (value: unknown): value is MessageItem[] =>
+  Array.isArray(value) &&
+  value.length <= 5_000 &&
+  value.every(
+    (item) =>
+      typeof item === "object" &&
+      item !== null &&
+      isBoundedString((item as MessageItem).id, 128) &&
+      isBoundedString((item as MessageItem).author, 256) &&
+      isBoundedString((item as MessageItem).initials, 16) &&
+      isBoundedString((item as MessageItem).color, 32) &&
+      isBoundedString((item as MessageItem).body, 4_000) &&
+      isBoundedString((item as MessageItem).time, 64) &&
+      typeof (item as MessageItem).own === "boolean",
+  );
+
 export const people: Person[] = [
   {
     id: "p1",
@@ -231,7 +260,7 @@ export const conversations = [
   },
 ];
 
-export const initialMessages = [
+export const initialMessages: MessageItem[] = [
   {
     id: "x1",
     author: "Lena Ortiz",
