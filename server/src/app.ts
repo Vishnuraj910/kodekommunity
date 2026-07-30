@@ -14,6 +14,7 @@ import { authPlugin } from "./plugins/auth.js";
 import { openApiPlugin } from "./plugins/openapi.js";
 import { prismaPlugin } from "./plugins/prisma.js";
 import { accessRoutes } from "./routes/access.js";
+import { adminRoutes } from "./routes/admin.js";
 import { authRoutes } from "./routes/auth.js";
 import { broadcastRoutes } from "./routes/broadcasts.js";
 import { channelRoutes } from "./routes/channels.js";
@@ -30,9 +31,14 @@ import {
   type OidcClient,
 } from "./services/oidc-client.js";
 import { MessageHub } from "./services/message-hub.js";
+import {
+  createVerificationMailer,
+  type VerificationMailer,
+} from "./services/verification-mailer.js";
 
 type AppDependencies = {
   oidcClient?: OidcClient;
+  verificationMailer?: VerificationMailer;
 };
 
 export const buildApp = async (
@@ -52,6 +58,10 @@ export const buildApp = async (
     dependencies.oidcClient ?? createOidcClient(config),
   );
   app.decorate("messageHub", new MessageHub());
+  app.decorate(
+    "verificationMailer",
+    dependencies.verificationMailer ?? createVerificationMailer(config),
+  );
   const clientOrigin = new URL(config.CLIENT_ORIGIN).origin;
   app.addHook("onRequest", async (request) => {
     const origin = request.headers.origin;
@@ -80,7 +90,7 @@ export const buildApp = async (
   await app.register(cors, {
     origin: config.CLIENT_ORIGIN,
     credentials: true,
-    methods: ["GET", "POST", "PUT"],
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE"],
     allowedHeaders: ["content-type", "idempotency-key", "x-kommunity-user-id"],
   });
   await app.register(cookie);
@@ -153,6 +163,7 @@ export const buildApp = async (
   });
 
   await app.register(healthRoutes, { prefix: "/api/v1" });
+  await app.register(adminRoutes, { prefix: "/api/v1" });
   await app.register(authRoutes, { prefix: "/api/v1" });
   await app.register(broadcastRoutes, { prefix: "/api/v1" });
   await app.register(channelRoutes, { prefix: "/api/v1" });

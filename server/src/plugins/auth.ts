@@ -26,14 +26,21 @@ export const authPlugin = fp(
 
       const rawHeader = request.headers["x-kommunity-user-id"];
       const headerUserId = Array.isArray(rawHeader) ? rawHeader[0] : rawHeader;
-      const userId = headerUserId ?? fastify.config.DEMO_USER_ID;
-      if (!userId || !/^[a-zA-Z0-9_-]{1,64}$/.test(userId)) {
+      if (!headerUserId) {
+        throw new AppError(
+          401,
+          "AUTHENTICATION_REQUIRED",
+          "Authentication required",
+        );
+      }
+      if (!/^[a-zA-Z0-9_-]{1,64}$/.test(headerUserId)) {
         throw new AppError(
           401,
           "INVALID_DEMO_IDENTITY",
           "A valid development identity is required",
         );
       }
+      const userId = headerUserId;
 
       const user = await fastify.prisma.user.findUnique({
         where: { id: userId },

@@ -101,6 +101,7 @@ model User {
   auditEvents             AuditLog[]                @relation("AuditActor")
   idempotencyRecords      IdempotencyRecord[]
   passwordCredential      PasswordCredential?
+  emailVerifications      EmailVerification[]
   sessions                Session[]
   oidcIdentities          OidcIdentity[]
   createdGroups           Group[]                   @relation("GroupCreator")
@@ -110,6 +111,20 @@ model User {
   createdConversations    Conversation[]            @relation("ConversationCreator")
 
   @@index([displayName, id])
+}
+
+model EmailVerification {
+  id         String    @id @default(cuid()) @db.VarChar(64)
+  tokenHash  String    @unique @db.Char(64)
+  userId     String    @db.VarChar(64)
+  createdAt  DateTime  @default(now()) @db.Timestamptz(3)
+  expiresAt  DateTime  @db.Timestamptz(3)
+  consumedAt DateTime? @db.Timestamptz(3)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, expiresAt])
+  @@index([expiresAt, consumedAt])
 }
 
 model PasswordCredential {
@@ -308,6 +323,7 @@ model Event {
   createdById String   @db.VarChar(64)
   createdAt   DateTime @default(now()) @db.Timestamptz(3)
   updatedAt   DateTime @updatedAt @db.Timestamptz(3)
+  deletedAt   DateTime? @db.Timestamptz(3)
 
   community       Community        @relation(fields: [communityId], references: [id], onDelete: Cascade)
   createdBy       User             @relation("EventCreator", fields: [createdById], references: [id], onDelete: Restrict)
@@ -317,6 +333,7 @@ model Event {
 
   @@unique([communityId, slug])
   @@index([communityId, startsAt])
+  @@index([communityId, deletedAt, startsAt])
   @@index([startsAt, id])
 }
 

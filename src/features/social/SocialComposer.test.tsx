@@ -51,4 +51,39 @@ describe("SocialComposer", () => {
       }),
     );
   });
+
+  it("uses an animated keyboard-accessible visibility picker", async () => {
+    const user = userEvent.setup();
+    const onCreateGroup = vi.fn().mockResolvedValue(undefined);
+    render(
+      <SocialComposer
+        {...callbacks}
+        canManageCommunity
+        onCreateGroup={onCreateGroup}
+      />,
+    );
+
+    await user.click(screen.getByRole("tab", { name: /group/i }));
+    await user.type(screen.getByLabelText(/group name/i), "Release Guild");
+    await user.type(
+      screen.getByLabelText(/description/i),
+      "A private space for release coordinators.",
+    );
+
+    const visibility = screen.getByRole("combobox", { name: /visibility/i });
+    expect(visibility).not.toBeInstanceOf(HTMLSelectElement);
+
+    await user.click(visibility);
+    expect(screen.getByRole("listbox")).toHaveAttribute(
+      "data-slot",
+      "select-content",
+    );
+    await user.click(screen.getByRole("option", { name: "Private" }));
+    expect(visibility).toHaveTextContent("Private");
+
+    await user.click(screen.getByRole("button", { name: /create group/i }));
+    expect(onCreateGroup).toHaveBeenCalledWith(
+      expect.objectContaining({ visibility: "private" }),
+    );
+  });
 });

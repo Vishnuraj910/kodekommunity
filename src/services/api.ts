@@ -1,5 +1,7 @@
 import {
   accessDirectorySchema,
+  adminOverviewSchema,
+  adminUserSchema,
   authResponseSchema,
   broadcastPageSchema,
   broadcastSchema,
@@ -8,6 +10,7 @@ import {
   channelSchema,
   directConversationSchema,
   errorSchema,
+  eventSchema,
   groupPageSchema,
   groupSchema,
   messagePageSchema,
@@ -15,9 +18,18 @@ import {
   membershipResponseSchema,
   postPageSchema,
   postSchema,
+  registrationResponseSchema,
   roleChangeResponseSchema,
   rsvpResponseSchema,
   type ApiRoleAssignment,
+  type AdminEventCreate,
+  type AdminEventUpdate,
+  type AdminGroupCreate,
+  type AdminGroupUpdate,
+  type AdminPostCreate,
+  type AdminPostUpdate,
+  type AdminUserCreate,
+  type AdminUserUpdate,
 } from "../../server/src/schemas/api.ts";
 
 const apiRoot = "/api/v1";
@@ -41,7 +53,7 @@ const request = async <T>(
     ...init,
     credentials: "same-origin",
     headers: {
-      "content-type": "application/json",
+      ...(init?.body === undefined ? {} : { "content-type": "application/json" }),
       ...init?.headers,
     },
   });
@@ -65,7 +77,7 @@ const requestWithoutResponse = async (
     ...init,
     credentials: "same-origin",
     headers: {
-      "content-type": "application/json",
+      ...(init?.body === undefined ? {} : { "content-type": "application/json" }),
       ...init?.headers,
     },
   });
@@ -86,7 +98,7 @@ export const loadAuthSession = () =>
   request("/auth/session", authResponseSchema);
 
 export const loginWithEmail = (input: {
-  email: string;
+  identifier: string;
   password: string;
 }) =>
   request("/auth/login", authResponseSchema, {
@@ -97,10 +109,9 @@ export const loginWithEmail = (input: {
 export const registerWithEmail = (input: {
   displayName: string;
   email: string;
-  handle: string;
   password: string;
 }) =>
-  request("/auth/register", authResponseSchema, {
+  request("/auth/register", registrationResponseSchema, {
     method: "POST",
     body: JSON.stringify(input),
   });
@@ -108,8 +119,104 @@ export const registerWithEmail = (input: {
 export const logout = () =>
   requestWithoutResponse("/auth/logout", { method: "POST" });
 
+export const updateProfile = (input: {
+  displayName: string;
+  username: string;
+}) =>
+  request("/auth/profile", authResponseSchema, {
+    method: "PATCH",
+    body: JSON.stringify(input),
+  });
+
 export const loadAccessDirectory = () =>
   request("/access/users", accessDirectorySchema);
+
+export const loadAdminOverview = () =>
+  request("/admin", adminOverviewSchema);
+
+const idempotencyHeaders = () => ({
+  "idempotency-key": crypto.randomUUID(),
+});
+
+export const createAdminUser = (input: AdminUserCreate) =>
+  request("/admin/users", adminUserSchema, {
+    method: "POST",
+    headers: idempotencyHeaders(),
+    body: JSON.stringify(input),
+  });
+
+export const updateAdminUser = (userId: string, input: AdminUserUpdate) =>
+  request(`/admin/users/${encodeURIComponent(userId)}`, adminUserSchema, {
+    method: "PATCH",
+    headers: idempotencyHeaders(),
+    body: JSON.stringify(input),
+  });
+
+export const deleteAdminUser = (userId: string) =>
+  requestWithoutResponse(`/admin/users/${encodeURIComponent(userId)}`, {
+    method: "DELETE",
+    headers: idempotencyHeaders(),
+  });
+
+export const createAdminEvent = (input: AdminEventCreate) =>
+  request("/admin/events", eventSchema, {
+    method: "POST",
+    headers: idempotencyHeaders(),
+    body: JSON.stringify(input),
+  });
+
+export const updateAdminEvent = (eventId: string, input: AdminEventUpdate) =>
+  request(`/admin/events/${encodeURIComponent(eventId)}`, eventSchema, {
+    method: "PATCH",
+    headers: idempotencyHeaders(),
+    body: JSON.stringify(input),
+  });
+
+export const deleteAdminEvent = (eventId: string) =>
+  requestWithoutResponse(`/admin/events/${encodeURIComponent(eventId)}`, {
+    method: "DELETE",
+    headers: idempotencyHeaders(),
+  });
+
+export const createAdminPost = (input: AdminPostCreate) =>
+  request("/admin/posts", postSchema, {
+    method: "POST",
+    headers: idempotencyHeaders(),
+    body: JSON.stringify(input),
+  });
+
+export const updateAdminPost = (postId: string, input: AdminPostUpdate) =>
+  request(`/admin/posts/${encodeURIComponent(postId)}`, postSchema, {
+    method: "PATCH",
+    headers: idempotencyHeaders(),
+    body: JSON.stringify(input),
+  });
+
+export const deleteAdminPost = (postId: string) =>
+  requestWithoutResponse(`/admin/posts/${encodeURIComponent(postId)}`, {
+    method: "DELETE",
+    headers: idempotencyHeaders(),
+  });
+
+export const createAdminGroup = (input: AdminGroupCreate) =>
+  request("/admin/groups", groupSchema, {
+    method: "POST",
+    headers: idempotencyHeaders(),
+    body: JSON.stringify(input),
+  });
+
+export const updateAdminGroup = (groupId: string, input: AdminGroupUpdate) =>
+  request(`/admin/groups/${encodeURIComponent(groupId)}`, groupSchema, {
+    method: "PATCH",
+    headers: idempotencyHeaders(),
+    body: JSON.stringify(input),
+  });
+
+export const deleteAdminGroup = (groupId: string) =>
+  requestWithoutResponse(`/admin/groups/${encodeURIComponent(groupId)}`, {
+    method: "DELETE",
+    headers: idempotencyHeaders(),
+  });
 
 export const loadMessages = (conversationId: string) =>
   request(

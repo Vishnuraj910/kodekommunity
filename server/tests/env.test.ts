@@ -10,7 +10,10 @@ describe("environment configuration", () => {
     expect(loadConfig(base as NodeJS.ProcessEnv)).toEqual(
       expect.objectContaining({
         ALLOW_DEMO_AUTH: false,
+        API_PUBLIC_URL: "http://127.0.0.1:8787",
         CLIENT_ORIGIN: "http://127.0.0.1:4173",
+        EMAIL_VERIFICATION_MODE: "auto",
+        EMAIL_VERIFICATION_TTL_HOURS: 24,
         HOST: "127.0.0.1",
         NODE_ENV: "development",
         OIDC_SCOPES: "openid profile email",
@@ -23,7 +26,6 @@ describe("environment configuration", () => {
       loadConfig({
         ...base,
         ALLOW_DEMO_AUTH: "TRUE",
-        DEMO_USER_ID: "maya",
         PORT: "9000",
       } as NodeJS.ProcessEnv),
     ).toEqual(expect.objectContaining({ ALLOW_DEMO_AUTH: true, PORT: 9000 }));
@@ -36,14 +38,24 @@ describe("environment configuration", () => {
       /cannot be enabled in production/,
     ],
     [
-      "demo auth without an identity",
-      { ...base, ALLOW_DEMO_AUTH: "true" },
-      /DEMO_USER_ID is required/,
-    ],
-    [
       "partial OIDC",
       { ...base, OIDC_CLIENT_ID: "client-only" },
       /must be configured together/,
+    ],
+    [
+      "production verification bypass",
+      {
+        ...base,
+        NODE_ENV: "production",
+        API_PUBLIC_URL: "https://api.example.test",
+        CLIENT_ORIGIN: "https://app.example.test",
+      },
+      /cannot be skipped in production/,
+    ],
+    [
+      "email verification without a provider",
+      { ...base, EMAIL_VERIFICATION_MODE: "email" },
+      /RESEND_API_KEY and EMAIL_FROM are required/,
     ],
     [
       "non-PostgreSQL storage",

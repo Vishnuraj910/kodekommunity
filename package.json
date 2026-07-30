@@ -27,6 +27,9 @@
     "typecheck:all": "corepack pnpm run typecheck && corepack pnpm --dir server typecheck"
   },
   "dependencies": {
+    "@radix-ui/react-popover": "1.1.21",
+    "@radix-ui/react-radio-group": "1.4.5",
+    "@radix-ui/react-select": "2.3.5",
     "emoji-picker-react": "4.19.1",
     "lucide-react": "0.468.0",
     "react": "19.2.8",

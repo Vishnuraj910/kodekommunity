@@ -5,8 +5,11 @@ export default defineConfig({
   plugins: [react()],
   test: {
     environment: "jsdom",
+    fileParallelism: false,
     include: ["src/**/*.test.{ts,tsx}"],
+    pool: "forks",
     setupFiles: ["src/test/setup.ts"],
+    testTimeout: 15_000,
     coverage: {
       provider: "v8",
       reportsDirectory: "coverage/frontend",

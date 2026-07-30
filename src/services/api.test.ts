@@ -1,11 +1,20 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  createAdminEvent,
+  createAdminGroup,
+  createAdminPost,
+  createAdminUser,
   createBroadcast,
   createChannel,
   createDirectConversation,
   createGroup,
   createPost,
+  deleteAdminEvent,
+  deleteAdminGroup,
+  deleteAdminPost,
+  deleteAdminUser,
   loadAccessDirectory,
+  loadAdminOverview,
   loadAuthSession,
   loadBootstrap,
   loadBroadcasts,
@@ -17,6 +26,10 @@ import {
   postMessage,
   registerWithEmail,
   updateCommunityMembership,
+  updateAdminEvent,
+  updateAdminGroup,
+  updateAdminPost,
+  updateAdminUser,
   updateRole,
   updateRsvp,
   loginWithEmail,
@@ -45,7 +58,7 @@ describe("API client", () => {
 
     await expect(
       loginWithEmail({
-        email: "maya@example.test",
+        identifier: "maya@example.test",
         password: "A secure passphrase! 2026",
       }),
     ).resolves.toEqual({
@@ -103,6 +116,23 @@ describe("API client", () => {
     );
   });
 
+  it("does not label an empty logout request as JSON", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(new Response(null, { status: 204 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await logout();
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/v1/auth/logout",
+      expect.objectContaining({
+        headers: {},
+        method: "POST",
+      }),
+    );
+  });
+
   it("exposes a consistent typed error across every social operation", async () => {
     vi.stubGlobal(
       "fetch",
@@ -126,10 +156,40 @@ describe("API client", () => {
       registerWithEmail({
         displayName: "Lee Morgan",
         email: "lee@example.test",
-        handle: "lee",
         password: "a secure passphrase",
       }),
       loadAccessDirectory(),
+      loadAdminOverview(),
+      createAdminUser({
+        displayName: "Lee Morgan",
+        email: "lee@example.test",
+        handle: "lee",
+      }),
+      updateAdminUser("user/one", { displayName: "Lee Morgan" }),
+      deleteAdminUser("user/one"),
+      createAdminEvent({
+        communityId: "c1",
+        description: "An event",
+        endsAt: "2027-01-01T11:00:00.000Z",
+        location: "Online",
+        slug: "event-one",
+        startsAt: "2027-01-01T10:00:00.000Z",
+        title: "Event one",
+      }),
+      updateAdminEvent("event/one", { title: "Updated event" }),
+      deleteAdminEvent("event/one"),
+      createAdminPost({ communityId: "c1", body: "Admin post" }),
+      updateAdminPost("post/one", { body: "Updated admin post" }),
+      deleteAdminPost("post/one"),
+      createAdminGroup({
+        communityId: "c1",
+        description: "Admin group",
+        name: "Admin group",
+        slug: "admin-group",
+        visibility: "private",
+      }),
+      updateAdminGroup("group/one", { name: "Updated admin group" }),
+      deleteAdminGroup("group/one"),
       loadMessages("conversation/one"),
       updateRsvp("event/one", "going"),
       updateCommunityMembership("community/one", "joined"),
@@ -160,7 +220,7 @@ describe("API client", () => {
     ];
     const results = await Promise.allSettled(operations);
 
-    expect(results).toHaveLength(17);
+    expect(results).toHaveLength(30);
     for (const result of results) {
       expect(result.status).toBe("rejected");
       if (result.status === "rejected") {

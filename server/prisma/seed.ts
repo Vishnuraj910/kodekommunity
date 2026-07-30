@@ -231,7 +231,7 @@ export const seedDatabase = async (
     await prisma.event.upsert({
       where: { id: event.id },
       create: event,
-      update: event,
+      update: { ...event, deletedAt: null },
     });
   }
 

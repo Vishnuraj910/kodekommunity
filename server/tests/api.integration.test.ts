@@ -44,12 +44,12 @@ test("health, bootstrap, and OpenAPI are available", async () => {
   assert.equal(specification.statusCode, 200);
   assert.ok(specification.json().paths["/api/v1/access/roles"]);
 
-  const defaultIdentity = await app.inject({
+  const missingIdentity = await app.inject({
     method: "GET",
     url: "/api/v1/bootstrap",
   });
-  assert.equal(defaultIdentity.statusCode, 200);
-  assert.equal(defaultIdentity.json().user.id, "maya");
+  assert.equal(missingIdentity.statusCode, 401);
+  assert.equal(missingIdentity.json().error.code, "AUTHENTICATION_REQUIRED");
 });
 
 test("HTTP failures use stable public error contracts", async () => {

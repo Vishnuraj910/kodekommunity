@@ -2,15 +2,20 @@ import type { FastifyPluginAsyncZod } from "fastify-type-provider-zod";
 import { z } from "zod";
 import {
   authResponseSchema,
+  emailVerificationQuerySchema,
   errorSchema,
   loginRequestSchema,
   oidcCallbackQuerySchema,
+  profileUpdateRequestSchema,
   registrationRequestSchema,
+  registrationResponseSchema,
 } from "../schemas/api.js";
 import {
   currentAuthenticatedUser,
   loginWithPassword,
   registerWithPassword,
+  updateAuthenticatedUser,
+  verifyEmailAddress,
 } from "../services/authentication.js";
 import { revokeSession } from "../services/sessions.js";
 import {
@@ -81,6 +86,37 @@ export const authRoutes: FastifyPluginAsyncZod = async (fastify) => {
     },
   );
 
+  fastify.patch(
+    "/auth/profile",
+    {
+      preHandler: fastify.authenticate,
+      config: { rateLimit: { max: 20, timeWindow: "15 minutes" } },
+      schema: {
+        tags: ["Authentication"],
+        summary: "Update the authenticated user's profile",
+        security: [{ CookieSession: [] }],
+        body: profileUpdateRequestSchema,
+        response: {
+          200: authResponseSchema,
+          400: errorSchema,
+          401: errorSchema,
+          409: errorSchema,
+          429: errorSchema,
+        },
+      },
+    },
+    async (request, reply) => {
+      reply.header("Cache-Control", "no-store");
+      return {
+        user: await updateAuthenticatedUser(
+          fastify,
+          request.auth.id,
+          request.body,
+        ),
+      };
+    },
+  );
+
   fastify.post(
     "/auth/register",
     {
@@ -92,22 +128,53 @@ export const authRoutes: FastifyPluginAsyncZod = async (fastify) => {
           "Secondary registration method. OIDC is the preferred account flow.",
         body: registrationRequestSchema,
         response: {
-          201: authResponseSchema,
+          201: registrationResponseSchema,
           400: errorSchema,
           409: errorSchema,
           429: errorSchema,
+          503: errorSchema,
         },
       },
     },
     async (request, reply) => {
       const result = await registerWithPassword(fastify, request.body);
-      reply
-        .header("Cache-Control", "no-store")
-        .setCookie(fastify.config.SESSION_COOKIE_NAME, result.session.token, {
+      reply.header("Cache-Control", "no-store");
+      if (result.status === "verification_required") {
+        return reply.code(201).send(result);
+      }
+      reply.setCookie(
+        fastify.config.SESSION_COOKIE_NAME,
+        result.session.token,
+        {
           ...cookieOptions(fastify.config.NODE_ENV === "production"),
           expires: result.session.expiresAt,
-        });
-      return reply.code(201).send({ user: result.user });
+        },
+      );
+      return reply.code(201).send({
+        status: "authenticated",
+        user: result.user,
+      });
+    },
+  );
+
+  fastify.get(
+    "/auth/verify-email",
+    {
+      config: { rateLimit: { max: 30, timeWindow: "15 minutes" } },
+      schema: {
+        tags: ["Authentication"],
+        summary: "Verify an email-and-password account",
+        querystring: emailVerificationQuerySchema,
+        response: { 400: errorSchema, 429: errorSchema },
+      },
+    },
+    async (request, reply) => {
+      await verifyEmailAddress(fastify, request.query.token);
+      const destination = new URL("/login", fastify.config.CLIENT_ORIGIN);
+      destination.searchParams.set("verified", "1");
+      return reply
+        .header("Cache-Control", "no-store")
+        .redirect(destination.href);
     },
   );
 
@@ -117,13 +184,14 @@ export const authRoutes: FastifyPluginAsyncZod = async (fastify) => {
       config: { rateLimit: { max: 10, timeWindow: "15 minutes" } },
       schema: {
         tags: ["Authentication"],
-        summary: "Log in with email and password",
+        summary: "Log in with email or username and password",
         description: "Secondary login method when OIDC is not used.",
         body: loginRequestSchema,
         response: {
           200: authResponseSchema,
           400: errorSchema,
           401: errorSchema,
+          403: errorSchema,
           429: errorSchema,
         },
       },
