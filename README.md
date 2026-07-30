@@ -60,7 +60,22 @@ pnpm build
 
 `pnpm-workspace.yaml` sets `minimumReleaseAge: 10080`, so pnpm will not resolve a
 direct or transitive release until it has been public for seven days. Strict mode
-is enabled and registry metadata without publish timestamps is rejected.
+is enabled, direct dependency versions are pinned, and registry metadata without
+publish timestamps is rejected.
+
+## Security
+
+[SECURITY.md](SECURITY.md) contains the threat model, ranked findings,
+implemented browser controls, required negative cases, and production blockers.
+This prototype must not process real credentials or private production data
+until server-side authentication, tenant isolation, audit, idempotency,
+retention, recovery, and secret-management controls are implemented.
+
+Run the production dependency audit with:
+
+```bash
+pnpm security:audit
+```
 
 ## Production integrations
 
