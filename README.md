@@ -59,18 +59,25 @@ documentation at [http://127.0.0.1:8787/docs](http://127.0.0.1:8787/docs), and
 the readiness check at
 [http://127.0.0.1:8787/api/v1/health/ready](http://127.0.0.1:8787/api/v1/health/ready).
 
-No third-party key is required for local email/password development. OIDC is
-the preferred UI path when configured; email/password remains available as a
+No third-party key is required for local email/password development:
+`EMAIL_VERIFICATION_MODE=auto` activates a new account immediately. Production
+configuration rejects that bypass and requires email verification. OIDC is the
+preferred UI path when configured; email/password remains available as a
 secondary disclosure. The `x-kommunity-user-id` selector is an opt-in local
 testing facility enabled only when `ALLOW_DEMO_AUTH=true`; startup validation
 rejects it in production.
 
-Credentials use parameterized scrypt with a unique salt. Sessions use opaque
-tokens whose hashes, expiry, and revocation state are persisted in PostgreSQL;
-the browser receives only an HttpOnly, SameSite cookie. OIDC uses Authorization
-Code with PKCE, state, nonce, verified email, exact issuer validation, and a
-one-time flow record. The role switcher remains a preview tool—the server always
-authorizes the authenticated database identity and object scope.
+Credentials use parameterized scrypt with a unique salt. Email-verification
+links use single-use random tokens; only their SHA-256 hashes, expiry, and
+consumption time are persisted. Sessions use opaque tokens whose hashes, expiry,
+and revocation state are persisted in PostgreSQL; the browser receives only an
+HttpOnly, SameSite cookie. OIDC uses Authorization Code with PKCE, state, nonce,
+verified email, exact issuer validation, a browser-bound HttpOnly flow cookie,
+and a one-time flow record. Admin-created invitations are claimed through the
+same registration form; production still requires the invited mailbox to
+complete email verification before login. The role
+switcher remains a preview tool—the server always authorizes the authenticated
+database identity and object scope.
 
 ## Verification
 
@@ -103,10 +110,26 @@ Run the production dependency audit with:
 pnpm security:audit
 ```
 
+## Email verification and API keys
+
+Production password registration sends verification links through Resend:
+
+1. Create a Resend account and API key in the Resend dashboard. Put the key in
+   the server-only `RESEND_API_KEY` value; never prefix it with `VITE_`.
+2. Add and verify a sending domain in Resend, including the DNS records it
+   supplies.
+3. Set `EMAIL_FROM` to an address on that verified domain, for example
+   `Kommunity <verify@community.example>`.
+4. Set `EMAIL_VERIFICATION_MODE=email`, `API_PUBLIC_URL` to the public HTTPS API
+   origin, and `CLIENT_ORIGIN` to the public HTTPS web origin.
+
+`EMAIL_VERIFICATION_TTL_HOURS` defaults to 24. In local development, retain
+`EMAIL_VERIFICATION_MODE=auto`; `RESEND_API_KEY` and `EMAIL_FROM` are then not
+needed and registration activates the account immediately.
+
 ## OIDC configuration
 
-The only external credentials currently consumed by the application are a
-generic OIDC confidential-client ID and secret:
+OIDC requires a generic confidential-client ID and secret:
 
 1. In your organization’s identity-provider console, create an **OIDC web
    application** (sometimes called a confidential web client).

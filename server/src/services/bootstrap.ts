@@ -35,6 +35,7 @@ export const getBootstrap = async (
     }),
     prisma.event.findMany({
       where: {
+        deletedAt: null,
         community: {
           OR: [
             { visibility: "PUBLIC" },

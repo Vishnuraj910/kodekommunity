@@ -7,6 +7,15 @@ import {
   X,
 } from "lucide-react";
 import { useEffect, useState } from "react";
+import { Input } from "../../components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "../../components/ui/select";
+import { Textarea } from "../../components/ui/textarea";
 
 type ComposerKind = "post" | "group" | "broadcast" | "channel";
 
@@ -184,7 +193,7 @@ export function SocialComposer({
                 : kind === "group"
                   ? "Group name"
                   : "Channel name"}
-              <input
+              <Input
                 maxLength={kind === "broadcast" ? 160 : 120}
                 required
                 value={title}
@@ -201,7 +210,7 @@ export function SocialComposer({
           {(kind === "group" || kind === "channel") && (
             <label>
               Slug
-              <input
+              <Input
                 maxLength={80}
                 minLength={3}
                 pattern="[a-z0-9]+(?:-[a-z0-9]+)*"
@@ -218,7 +227,7 @@ export function SocialComposer({
               : kind === "broadcast"
                 ? "Broadcast details"
                 : "Description"}
-            <textarea
+            <Textarea
               autoFocus
               maxLength={kind === "post" ? 10_000 : 5_000}
               required
@@ -231,7 +240,7 @@ export function SocialComposer({
           {kind === "broadcast" && (
             <label>
               <span><CalendarClock size={15} /> Starts at</span>
-              <input
+              <Input
                 min={new Date().toISOString().slice(0, 16)}
                 type="datetime-local"
                 value={startsAt}
@@ -241,24 +250,29 @@ export function SocialComposer({
           )}
 
           {(kind === "group" || kind === "channel") && (
-            <label>
-              Visibility
-              <select
+            <label className="ui-field">
+              <span id="social-composer-visibility">Visibility</span>
+              <Select
                 value={visibility}
-                onChange={(event) =>
-                  setVisibility(event.target.value as "public" | "private")
+                onValueChange={(value) =>
+                  setVisibility(value as "public" | "private")
                 }
               >
-                <option value="public">Public</option>
-                <option value="private">Private</option>
-              </select>
+                <SelectTrigger aria-labelledby="social-composer-visibility">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="public">Public</SelectItem>
+                  <SelectItem value="private">Private</SelectItem>
+                </SelectContent>
+              </Select>
             </label>
           )}
 
           {kind === "channel" && (
             <label>
               Participant user IDs
-              <input
+              <Input
                 placeholder="maya, jon"
                 value={participantIds}
                 onChange={(event) => setParticipantIds(event.target.value)}

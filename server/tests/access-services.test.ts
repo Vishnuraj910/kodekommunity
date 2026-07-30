@@ -35,7 +35,10 @@ const createTransaction = () => ({
     findMany: vi.fn(),
   },
   community: { findUnique: vi.fn().mockResolvedValue({ id: "c1" }) },
-  event: { findUnique: vi.fn().mockResolvedValue({ id: "e1" }) },
+  event: {
+    findFirst: vi.fn().mockResolvedValue({ id: "e1" }),
+    findUnique: vi.fn().mockResolvedValue({ id: "e1", deletedAt: new Date() }),
+  },
   idempotencyRecord: {
     create: vi.fn().mockResolvedValue({}),
     findUnique: vi.fn().mockResolvedValue(null),
@@ -122,7 +125,7 @@ describe("access administration services", () => {
     if (assignment.scope === "community") {
       transaction.community.findUnique.mockResolvedValueOnce(null);
     } else {
-      transaction.event.findUnique.mockResolvedValueOnce(null);
+      transaction.event.findFirst.mockResolvedValueOnce(null);
     }
     await expect(
       changeRole(
@@ -132,6 +135,27 @@ describe("access administration services", () => {
         `key_${assignment.scope}`,
       ),
     ).rejects.toMatchObject({ code });
+  });
+
+  it("rejects presenter grants for soft-deleted events", async () => {
+    const transaction = createTransaction();
+    transaction.event.findFirst.mockResolvedValueOnce(null);
+    await expect(
+      changeRole(
+        prismaFor(transaction) as never,
+        root,
+        {
+          action: "grant",
+          assignment: {
+            role: "presenter",
+            scope: "event",
+            scopeId: "e1",
+          },
+          targetUserId: "target_1",
+        },
+        "key_deleted_event",
+      ),
+    ).rejects.toMatchObject({ code: "EVENT_NOT_FOUND" });
   });
 
   it.each([

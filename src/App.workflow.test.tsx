@@ -1,13 +1,28 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const api = vi.hoisted(() => ({
+  createAdminEvent: vi.fn(),
+  createAdminGroup: vi.fn(),
+  createAdminPost: vi.fn(),
+  createAdminUser: vi.fn(),
   createBroadcast: vi.fn(),
   createChannel: vi.fn(),
   createDirectConversation: vi.fn(),
   createGroup: vi.fn(),
   createPost: vi.fn(),
+  deleteAdminEvent: vi.fn(),
+  deleteAdminGroup: vi.fn(),
+  deleteAdminPost: vi.fn(),
+  deleteAdminUser: vi.fn(),
+  loadAdminOverview: vi.fn(),
   loadAuthSession: vi.fn(),
   loadBootstrap: vi.fn(),
   loadBroadcasts: vi.fn(),
@@ -19,17 +34,28 @@ const api = vi.hoisted(() => ({
   logout: vi.fn(),
   postMessage: vi.fn(),
   registerWithEmail: vi.fn(),
+  updateAdminEvent: vi.fn(),
+  updateAdminGroup: vi.fn(),
+  updateAdminPost: vi.fn(),
+  updateAdminUser: vi.fn(),
+  updateProfile: vi.fn(),
+  updateRole: vi.fn(),
 }));
 const live = vi.hoisted(() => ({
-  callback: undefined as ((message: Record<string, unknown>) => void) | undefined,
+  callbacks: new Map<
+    string,
+    Array<(message: Record<string, unknown>) => void>
+  >(),
   unsubscribe: vi.fn(),
 }));
 
 vi.mock("./services/api", () => api);
 vi.mock("./services/live-chat", () => ({
   subscribeToConversation: vi.fn(
-    (_conversationId: string, callback: (message: Record<string, unknown>) => void) => {
-      live.callback = callback;
+    (conversationId: string, callback: (message: Record<string, unknown>) => void) => {
+      const callbacks = live.callbacks.get(conversationId) ?? [];
+      callbacks.push(callback);
+      live.callbacks.set(conversationId, callbacks);
       return live.unsubscribe;
     },
   ),
@@ -153,9 +179,23 @@ const channel = {
   createdAt,
   updatedAt: createdAt,
 };
+const adminOverview = {
+  users: [{ ...bootstrap.user, email: "maya@kommunity.local" }],
+  communities: bootstrap.communities,
+  events: bootstrap.events,
+  posts: [post],
+  groups: [group],
+};
 
 const primeAuthenticatedApp = () => {
-  api.loadAuthSession.mockResolvedValue({ user: bootstrap.user });
+  api.loadAuthSession.mockResolvedValue({
+    user: {
+      displayName: bootstrap.user.displayName,
+      email: "maya@kommunity.local",
+      handle: bootstrap.user.handle,
+    },
+  });
+  api.loadAdminOverview.mockResolvedValue(adminOverview);
   api.loadBootstrap.mockResolvedValue(bootstrap);
   api.loadPosts.mockResolvedValue({ items: [post], nextCursor: null });
   api.loadGroups.mockResolvedValue({ items: [group], nextCursor: null });
@@ -194,13 +234,61 @@ const primeAuthenticatedApp = () => {
     title: "New broadcast",
   });
   api.createChannel.mockResolvedValue({ ...channel, id: "channel_new", title: "New channel" });
+  for (const operation of [
+    api.createAdminEvent,
+    api.createAdminGroup,
+    api.createAdminPost,
+    api.createAdminUser,
+    api.deleteAdminEvent,
+    api.deleteAdminGroup,
+    api.deleteAdminPost,
+    api.deleteAdminUser,
+    api.updateAdminEvent,
+    api.updateAdminGroup,
+    api.updateAdminPost,
+    api.updateAdminUser,
+    api.updateRole,
+  ]) {
+    operation.mockResolvedValue(undefined);
+  }
+  api.updateProfile.mockResolvedValue({
+    user: {
+      displayName: "Maya Updated",
+      email: "maya@kommunity.local",
+      handle: "maya-updated",
+    },
+  });
+};
+
+const openRootFeed = async (_user: ReturnType<typeof userEvent.setup>) => {
+  expect(await screen.findByText("Ship small, observable changes.")).toBeVisible();
+};
+
+const emitLive = (conversationId: string, liveMessage: typeof message) => {
+  for (const callback of live.callbacks.get(conversationId) ?? []) {
+    callback(liveMessage);
+  }
+};
+
+const deferred = <Value,>() => {
+  let resolve!: (value: Value) => void;
+  const promise = new Promise<Value>((promiseResolve) => {
+    resolve = promiseResolve;
+  });
+  return { promise, resolve };
 };
 
 beforeEach(() => {
   vi.clearAllMocks();
   localStorage.clear();
-  live.callback = undefined;
+  window.history.replaceState(null, "", "/");
+  live.callbacks.clear();
   primeAuthenticatedApp();
+});
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+  Reflect.deleteProperty(document, "startViewTransition");
 });
 
 describe("authenticated social application", () => {
@@ -209,10 +297,17 @@ describe("authenticated social application", () => {
     localStorage.setItem("kommunity-theme", "dark");
     render(<App />);
 
-    expect(await screen.findByText("Ship small, observable changes.")).toBeVisible();
+    await openRootFeed(user);
     expect(document.documentElement.dataset.theme).toBe("dark");
     expect(screen.getByRole("complementary", { name: /role preview/i })).toBeVisible();
-    await user.selectOptions(screen.getByLabelText(/active role/i), "root");
+    const roleSwitcher = screen.getByRole("combobox", { name: /active role/i });
+    expect(roleSwitcher).not.toBeInstanceOf(HTMLSelectElement);
+    await user.click(roleSwitcher);
+    expect(screen.getByRole("listbox")).toHaveAttribute(
+      "data-slot",
+      "select-content",
+    );
+    await user.click(screen.getByRole("option", { name: /^root/i }));
 
     await user.click(screen.getByRole("button", { name: /^groups$/i }));
     expect(screen.getByText("Platform reliability")).toBeVisible();
@@ -227,13 +322,17 @@ describe("authenticated social application", () => {
       "A durable message",
     ));
 
-    live.callback?.({
+    emitLive("conversation_1", {
       ...message,
       id: "message_live",
       body: "Arrived live",
     });
-    expect(await screen.findByText("Arrived live")).toBeVisible();
-    live.callback?.({ ...message });
+    expect(
+      await within(
+        screen.getByRole("log", { name: "Message history" }),
+      ).findByText("Arrived live"),
+    ).toBeVisible();
+    emitLive("conversation_1", { ...message });
 
     await user.click(screen.getByRole("button", { name: /add emoji/i }));
     await user.click(await screen.findByRole("button", { name: /pick smile/i }));
@@ -253,10 +352,91 @@ describe("authenticated social application", () => {
     expect(document.documentElement.dataset.theme).toBe("light");
   });
 
+  it("uses the device view transition for mobile page changes", async () => {
+    const user = userEvent.setup();
+    vi.stubGlobal(
+      "matchMedia",
+      vi.fn((query: string) => ({
+        matches: query === "(max-width: 900px)",
+        media: query,
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+      })),
+    );
+    const startViewTransition = vi.fn((update: () => void) => {
+      update();
+      return {};
+    });
+    Object.defineProperty(document, "startViewTransition", {
+      configurable: true,
+      value: startViewTransition,
+    });
+    render(<App />);
+    await openRootFeed(user);
+    startViewTransition.mockClear();
+
+    await user.click(screen.getByRole("button", { name: /^groups$/i }));
+
+    expect(startViewTransition).toHaveBeenCalledOnce();
+    expect(screen.getByText("Platform reliability")).toBeVisible();
+  });
+
+  it("toasts incoming messages and stores actionable notifications", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    await openRootFeed(user);
+
+    emitLive("conversation_1", {
+      ...message,
+      id: "message_notification",
+      body: "Please review the deployment plan.",
+    });
+
+    expect(await screen.findByRole("status")).toHaveTextContent(
+      "New message from Lee Morgan",
+    );
+    expect(
+      screen.getByRole("button", { name: "Notifications (1 unread)" }),
+    ).toBeVisible();
+
+    emitLive("conversation_1", {
+      ...message,
+      id: "message_notification",
+      body: "Please review the deployment plan.",
+    });
+    expect(
+      screen.getByRole("button", { name: "Notifications (1 unread)" }),
+    ).toBeVisible();
+
+    await user.click(screen.getByRole("button", { name: /^feed$/i }));
+    await user.click(
+      screen.getByRole("button", { name: "Notifications (1 unread)" }),
+    );
+    await user.click(
+      screen.getByRole("button", {
+        name: "Open notification: New message from Lee Morgan",
+      }),
+    );
+    expect(await screen.findByRole("heading", { name: "Messages" })).toBeVisible();
+    expect(window.location.pathname).toBe("/messages");
+
+    await user.click(
+      screen.getByRole("button", { name: "Notifications (1 unread)" }),
+    );
+    await user.click(
+      screen.getByRole("button", {
+        name: "Clear notification: New message from Lee Morgan",
+      }),
+    );
+    expect(
+      await screen.findByRole("button", { name: "Notifications" }),
+    ).toBeVisible();
+  });
+
   it("creates every supported social resource from the composer", async () => {
     const user = userEvent.setup();
     render(<App />);
-    await screen.findByText("Ship small, observable changes.");
+    await openRootFeed(user);
 
     await user.click(screen.getByRole("button", { name: /^create$/i }));
     await user.type(screen.getByLabelText(/post body/i), "New update");
@@ -282,7 +462,8 @@ describe("authenticated social application", () => {
     await user.type(screen.getByLabelText(/channel name/i), "New channel");
     await user.type(screen.getByLabelText(/^description$/i), "A new conversation");
     await user.type(screen.getByLabelText(/participant user ids/i), "lee, sam");
-    await user.selectOptions(screen.getByLabelText(/visibility/i), "private");
+    await user.click(screen.getByRole("combobox", { name: /visibility/i }));
+    await user.click(screen.getByRole("option", { name: "Private" }));
     await user.click(screen.getByRole("button", { name: /create channel/i }));
     await waitFor(() => expect(api.createChannel).toHaveBeenCalled());
   });
@@ -294,15 +475,75 @@ describe("authenticated social application", () => {
     render(<App />);
 
     await user.click(await screen.findByRole("button", { name: /use email and password/i }));
-    await user.type(screen.getByLabelText(/email address/i), "MAYA@EXAMPLE.TEST");
+    expect(window.location.pathname).toBe("/login");
+    await user.type(screen.getByLabelText(/email or username/i), "MAYA@EXAMPLE.TEST");
     await user.type(screen.getByLabelText(/^password$/i), "a secure password");
     await user.click(screen.getByRole("button", { name: /^log in$/i }));
-    expect(await screen.findByText("Ship small, observable changes.")).toBeVisible();
+    await openRootFeed(user);
+    expect(window.location.pathname).toBe("/");
     expect(api.loginWithEmail).toHaveBeenCalled();
 
     await user.click(screen.getByRole("button", { name: /sign out/i }));
     await waitFor(() => expect(api.logout).toHaveBeenCalled());
+    expect(window.location.pathname).toBe("/login");
     expect(screen.getByRole("button", { name: /continue with oidc/i })).toBeVisible();
+  });
+
+  it("keeps the themed login surface visible until the workspace is ready", async () => {
+    const user = userEvent.setup();
+    const workspace = deferred<typeof bootstrap>();
+    api.loadAuthSession.mockRejectedValueOnce(new Error("No session"));
+    api.loginWithEmail.mockResolvedValue({
+      user: {
+        displayName: "Maya Chen",
+        email: "maya@kommunity.local",
+        handle: "maya",
+      },
+    });
+    api.loadBootstrap.mockReturnValueOnce(workspace.promise);
+    render(<App />);
+
+    await user.click(
+      await screen.findByRole("button", {
+        name: /use email and password/i,
+      }),
+    );
+    await user.type(
+      screen.getByLabelText(/email or username/i),
+      "maya@kommunity.local",
+    );
+    await user.type(screen.getByLabelText(/^password$/i), "a secure password");
+    await user.click(screen.getByRole("button", { name: /^log in$/i }));
+
+    await waitFor(() => expect(api.loadBootstrap).toHaveBeenCalled());
+    expect(
+      screen.getByRole("heading", { name: /continue to your network/i }),
+    ).toBeVisible();
+    expect(
+      screen.getByRole("button", { name: /opening your network/i }),
+    ).toBeDisabled();
+
+    workspace.resolve(bootstrap);
+    expect(
+      await screen.findByText("Ship small, observable changes."),
+    ).toBeVisible();
+  });
+
+  it("keeps the secure-session handoff stable while restoring a login", async () => {
+    const workspace = deferred<typeof bootstrap>();
+    api.loadBootstrap.mockReturnValueOnce(workspace.promise);
+    render(<App />);
+
+    await waitFor(() => expect(api.loadBootstrap).toHaveBeenCalled());
+    expect(screen.getByText("Checking your secure session…")).toBeVisible();
+    expect(
+      screen.queryByText("Loading your communities…"),
+    ).not.toBeInTheDocument();
+
+    workspace.resolve(bootstrap);
+    expect(
+      await screen.findByText("Ship small, observable changes."),
+    ).toBeVisible();
   });
 
   it("fails closed when application data cannot be loaded", async () => {
@@ -318,7 +559,7 @@ describe("authenticated social application", () => {
     api.postMessage.mockRejectedValueOnce(new Error("Send unavailable"));
     api.createDirectConversation.mockRejectedValueOnce("failed");
     render(<App />);
-    await screen.findByText("Ship small, observable changes.");
+    await openRootFeed(user);
     await user.click(screen.getByRole("button", { name: /^messages$/i }));
     expect(await screen.findByRole("alert")).toHaveTextContent("History unavailable");
 
@@ -334,11 +575,123 @@ describe("authenticated social application", () => {
   it("does not submit empty chat forms", async () => {
     const user = userEvent.setup();
     render(<App />);
-    await screen.findByText("Ship small, observable changes.");
+    await openRootFeed(user);
     await user.click(screen.getByRole("button", { name: /^messages$/i }));
     fireEvent.submit(screen.getByLabelText(/^message$/i).closest("form")!);
     fireEvent.submit(screen.getByLabelText(/member user id/i).closest("form")!);
     expect(api.postMessage).not.toHaveBeenCalled();
     expect(api.createDirectConversation).not.toHaveBeenCalled();
+  });
+
+  it("opens root at home and previews only the roles actually assigned to the user", async () => {
+    const user = userEvent.setup();
+    render(<App />);
+
+    expect(await screen.findByText("Ship small, observable changes.")).toBeVisible();
+    expect(window.location.pathname).toBe("/");
+    await user.click(screen.getByRole("button", { name: /^admin$/i }));
+    expect(
+      await screen.findByRole("heading", { name: /platform administration/i }),
+    ).toBeVisible();
+    expect(window.location.pathname).toBe("/admin");
+    expect(screen.getByRole("button", { name: /^admin$/i })).toBeVisible();
+    const roleSelect = screen.getByLabelText(/active role/i);
+    await user.click(roleSelect);
+    const roleOptions = screen.getByRole("listbox");
+    expect(within(roleOptions).getByRole("option", { name: "Root · platform" })).toBeVisible();
+    expect(within(roleOptions).getByRole("option", { name: "User · platform" })).toBeVisible();
+    expect(
+      within(roleOptions).queryByRole("option", { name: "Maintainer · platform" }),
+    ).not.toBeInTheDocument();
+    expect(
+      within(roleOptions).queryByRole("option", { name: "Admin · KodeKommunity" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("keeps a baseline user out of platform administration", async () => {
+    api.loadBootstrap.mockResolvedValueOnce({
+      ...bootstrap,
+      user: {
+        ...bootstrap.user,
+        id: "aisha",
+        assignments: [{ role: "user", scope: "platform" }],
+      },
+    });
+    render(<App />);
+
+    expect(await screen.findByText("Ship small, observable changes.")).toBeVisible();
+    expect(screen.queryByRole("button", { name: /^admin$/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole("complementary", { name: /role preview/i })).not.toBeInTheDocument();
+  });
+
+  it("reconciles navigation when the active root revokes their own root role", async () => {
+    const user = userEvent.setup();
+    api.updateRole.mockResolvedValueOnce({
+      user: {
+        ...bootstrap.user,
+        assignments: [{ role: "user", scope: "platform" }],
+      },
+    });
+    render(<App />);
+
+    await screen.findByText("Ship small, observable changes.");
+    await user.click(screen.getByRole("button", { name: /^admin$/i }));
+    await user.click(
+      await screen.findByRole("button", {
+        name: /revoke root from maya chen/i,
+      }),
+    );
+
+    await waitFor(() =>
+      expect(screen.queryByRole("button", { name: /^admin$/i })).not.toBeInTheDocument(),
+    );
+    expect(window.location.pathname).toBe("/");
+    expect(api.loadAdminOverview).toHaveBeenCalledOnce();
+  });
+
+  it("lets a user open and update their account details", async () => {
+    const user = userEvent.setup();
+    localStorage.setItem("kommunity-theme", "dark");
+    render(<App />);
+    await openRootFeed(user);
+
+    await user.click(screen.getByRole("button", { name: /^profile$/i }));
+    expect(
+      await screen.findByRole("heading", { name: /account details/i }),
+    ).toBeVisible();
+    expect(screen.getByLabelText(/email address/i)).toHaveValue(
+      "maya@kommunity.local",
+    );
+    expect(screen.getByLabelText(/email address/i)).toHaveAttribute("readonly");
+    expect(
+      within(
+        screen.getByRole("region", { name: /account details/i }),
+      ).getByRole("button", { name: /^sign out$/i }),
+    ).toBeVisible();
+    const themeSettings = screen.getByRole("radiogroup", {
+      name: /theme preference/i,
+    });
+    expect(within(themeSettings).getByRole("radio", { name: /system/i })).toBeVisible();
+    expect(within(themeSettings).getByRole("radio", { name: /dark/i })).toBeChecked();
+    expect(
+      within(themeSettings).getByRole("radio", { name: /dark/i }),
+    ).not.toBeInstanceOf(HTMLInputElement);
+    await user.click(within(themeSettings).getByRole("radio", { name: /light/i }));
+    expect(document.documentElement.dataset.theme).toBe("light");
+    expect(localStorage.getItem("kommunity-theme")).toBe("light");
+
+    await user.clear(screen.getByLabelText(/display name/i));
+    await user.type(screen.getByLabelText(/display name/i), "Maya Updated");
+    await user.clear(screen.getByLabelText(/username/i));
+    await user.type(screen.getByLabelText(/username/i), "maya-updated");
+    await user.click(screen.getByRole("button", { name: /save profile/i }));
+
+    await waitFor(() =>
+      expect(api.updateProfile).toHaveBeenCalledWith({
+        displayName: "Maya Updated",
+        username: "maya-updated",
+      }),
+    );
+    expect(screen.getByText("@maya-updated")).toBeVisible();
   });
 });

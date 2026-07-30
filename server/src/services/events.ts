@@ -15,6 +15,7 @@ export const setRsvp = async (
     where: { id: eventId },
     select: {
       id: true,
+      deletedAt: true,
       community: {
         select: {
           visibility: true,
@@ -28,6 +29,7 @@ export const setRsvp = async (
   });
   if (
     !event ||
+    event.deletedAt ||
     (event.community.visibility === "PRIVATE" &&
       event.community.memberships.length === 0)
   ) {

@@ -42,9 +42,10 @@ export const listMessages = async (
   });
   const hasMore = messages.length > limit;
   const page = messages.slice(0, limit);
+  const nextCursor = hasMore ? page.at(-1)?.id ?? null : null;
   return {
     items: page.reverse().map((message) => toApiMessage(message, identity.id)),
-    nextCursor: hasMore ? page.at(-1)?.id ?? null : null,
+    nextCursor,
   };
 };
 

@@ -7,6 +7,7 @@ import { loadConfig } from "../src/config/env.js";
 let app: FastifyInstance;
 const conversationKey = `direct-${Date.now()}`;
 const messageKey = `direct-message-${Date.now()}`;
+const messageKeys = [messageKey, `${messageKey}-2`, `${messageKey}-3`];
 const messageBody = `Thanks for the review notes — I incorporated the rollback checklist ${Date.now()}.`;
 let conversationId: string | undefined;
 
@@ -32,7 +33,7 @@ afterAll(async () => {
     });
   }
   await app.prisma.idempotencyRecord.deleteMany({
-    where: { key: { in: [conversationKey, messageKey] } },
+    where: { key: { in: [conversationKey, ...messageKeys] } },
   });
   await app.close();
 });
@@ -74,15 +75,40 @@ test("two active community members create one direct thread and exchange message
     payload: { body: messageBody },
   });
   assert.equal(message.statusCode, 201);
+  for (const [index, key] of messageKeys.slice(1).entries()) {
+    const extraMessage = await app.inject({
+      method: "POST",
+      url: `/api/v1/conversations/${conversationId}/messages`,
+      headers: {
+        "idempotency-key": key,
+        "x-kommunity-user-id": "maya",
+      },
+      payload: { body: `${messageBody} page ${index + 2}` },
+    });
+    assert.equal(extraMessage.statusCode, 201);
+  }
 
   const history = await app.inject({
     method: "GET",
-    url: `/api/v1/conversations/${conversationId}/messages?limit=20`,
+    url: `/api/v1/conversations/${conversationId}/messages?limit=2`,
     headers: { "x-kommunity-user-id": "jon" },
   });
   assert.equal(history.statusCode, 200);
   assert.ok(
-    history.json().items.some((messageItem: { body: string }) => messageItem.body === messageBody),
+    history.json().items.some(
+      (messageItem: { body: string }) => messageItem.body === `${messageBody} page 2`,
+    ),
+  );
+  assert.equal(typeof history.json().nextCursor, "string");
+  const olderHistory = await app.inject({
+    method: "GET",
+    url: `/api/v1/conversations/${conversationId}/messages?limit=2&cursor=${history.json().nextCursor}`,
+    headers: { "x-kommunity-user-id": "jon" },
+  });
+  assert.equal(olderHistory.statusCode, 200);
+  assert.deepEqual(
+    olderHistory.json().items.map((item: { body: string }) => item.body),
+    [messageBody],
   );
 
   const outsider = await app.inject({

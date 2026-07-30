@@ -45,7 +45,7 @@ export const beginOidcFlow = async (fastify: FastifyInstance) => {
       },
     }),
   ]);
-  return authorization.url;
+  return { state: authorization.state, url: authorization.url };
 };
 
 export const completeOidcFlow = async (

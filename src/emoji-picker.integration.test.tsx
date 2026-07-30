@@ -43,6 +43,7 @@ it("inserts a selected emoji from the real picker into the message draft", async
   const user = userEvent.setup();
   render(
     <MessageWorkspace
+      communityId="c1"
       conversations={[
         {
           id: "conversation_1",

@@ -85,6 +85,11 @@ test("document and preview server declare core browser protections", async () =>
   assert.match(viteConfig, /responseCsp.*frame-ancestors 'none'/);
   assert.match(viteConfig, /apply: "serve"/);
   assert.match(viteConfig, /script-src 'self' 'unsafe-inline'/);
+  assert.match(
+    viteConfig,
+    /"\/api":\s*\{[\s\S]*?ws:\s*true/,
+    "the local API proxy must forward authenticated WebSocket upgrades",
+  );
   assert.match(staticPolicy, /frame-ancestors 'none'/);
   assert.match(viteConfig, /X-Content-Type-Options/);
 });

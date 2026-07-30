@@ -1,15 +1,34 @@
-import { ArrowRight, KeyRound, ShieldCheck, Sparkles } from "lucide-react";
+import {
+  ArrowRight,
+  Eye,
+  EyeOff,
+  KeyRound,
+  ShieldCheck,
+  Sparkles,
+} from "lucide-react";
 import { useState } from "react";
+import { Input } from "../../components/ui/input";
+import {
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+} from "../../components/ui/tabs";
 
 type LoginInput = {
+  identifier: string;
+  password: string;
+};
+
+type RegistrationInput = {
+  displayName: string;
   email: string;
   password: string;
 };
 
-type RegistrationInput = LoginInput & {
-  displayName: string;
-  handle: string;
-};
+type RegistrationResult =
+  | { status: "authenticated" }
+  | { status: "verification_required"; username: string };
 
 export function AuthScreen({
   onLocalLogin,
@@ -17,35 +36,47 @@ export function AuthScreen({
   onOidc,
 }: {
   onLocalLogin: (input: LoginInput) => Promise<void>;
-  onLocalRegister: (input: RegistrationInput) => Promise<void>;
+  onLocalRegister: (input: RegistrationInput) => Promise<RegistrationResult>;
   onOidc: () => void;
 }): React.JSX.Element {
   const [localOpen, setLocalOpen] = useState(false);
   const [mode, setMode] = useState<"login" | "register">("login");
   const [displayName, setDisplayName] = useState("");
-  const [handle, setHandle] = useState("");
-  const [email, setEmail] = useState("");
+  const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
+  const [passwordVisible, setPasswordVisible] = useState(false);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(() =>
+    new URLSearchParams(window.location.search).get("verified") === "1"
+      ? "Email verified. You can now log in."
+      : null,
+  );
 
   const submit = async (event: React.FormEvent) => {
     event.preventDefault();
     setPending(true);
     setError(null);
+    setSuccess(null);
     try {
-      const credentials = {
-        email: email.trim().toLowerCase(),
-        password,
-      };
       if (mode === "login") {
-        await onLocalLogin(credentials);
-      } else {
-        await onLocalRegister({
-          ...credentials,
-          displayName: displayName.trim(),
-          handle: handle.trim().toLowerCase(),
+        await onLocalLogin({
+          identifier: identifier.trim().toLowerCase(),
+          password,
         });
+      } else {
+        const result = await onLocalRegister({
+          displayName: displayName.trim(),
+          email: identifier.trim().toLowerCase(),
+          password,
+        });
+        if (result.status === "verification_required") {
+          setMode("login");
+          setPassword("");
+          setSuccess(
+            `Check your email to activate your account. Your username is @${result.username}.`,
+          );
+        }
       }
     } catch (caught) {
       setError(
@@ -59,7 +90,10 @@ export function AuthScreen({
   };
 
   return (
-    <main className="auth-shell">
+    <main
+      aria-busy={pending}
+      className={`auth-shell${pending ? " authenticating" : ""}`}
+    >
       <section className="auth-story" aria-label="About Kommunity">
         <div className="auth-brand">
           <span className="auth-brand-mark" aria-hidden="true">
@@ -117,32 +151,33 @@ export function AuthScreen({
             </button>
           ) : (
             <div className="auth-local">
-              <div className="auth-tabs" role="tablist" aria-label="Local account">
-                <button
+              <Tabs
+                onValueChange={(value) =>
+                  setMode(value as "login" | "register")
+                }
+                value={mode}
+              >
+              <TabsList className="auth-tabs" aria-label="Local account">
+                <TabsTrigger
                   className={mode === "login" ? "active" : ""}
-                  type="button"
-                  role="tab"
-                  aria-selected={mode === "login"}
-                  onClick={() => setMode("login")}
+                  value="login"
                 >
                   Log in
-                </button>
-                <button
+                </TabsTrigger>
+                <TabsTrigger
                   className={mode === "register" ? "active" : ""}
-                  type="button"
-                  role="tab"
-                  aria-selected={mode === "register"}
-                  onClick={() => setMode("register")}
+                  value="register"
                 >
                   Register
-                </button>
-              </div>
+                </TabsTrigger>
+              </TabsList>
+              <TabsContent key={mode} value={mode}>
               <form onSubmit={submit}>
                 {mode === "register" && (
                   <>
                     <label>
                       Display name
-                      <input
+                      <Input
                         autoComplete="name"
                         maxLength={120}
                         required
@@ -150,46 +185,45 @@ export function AuthScreen({
                         onChange={(event) => setDisplayName(event.target.value)}
                       />
                     </label>
-                    <label>
-                      Handle
-                      <input
-                        autoComplete="username"
-                        maxLength={32}
-                        minLength={3}
-                        pattern="[a-zA-Z0-9_]+"
-                        required
-                        value={handle}
-                        onChange={(event) => setHandle(event.target.value)}
-                      />
-                    </label>
                   </>
                 )}
                 <label>
-                  Email address
-                  <input
-                    autoComplete="email"
-                    inputMode="email"
+                  {mode === "login" ? "Email or username" : "Email address"}
+                  <Input
+                    autoComplete={mode === "login" ? "username" : "email"}
+                    inputMode={mode === "login" ? undefined : "email"}
                     maxLength={320}
                     required
-                    type="email"
-                    value={email}
-                    onChange={(event) => setEmail(event.target.value)}
+                    type={mode === "login" ? "text" : "email"}
+                    value={identifier}
+                    onChange={(event) => setIdentifier(event.target.value)}
                   />
                 </label>
-                <label>
-                  Password
-                  <input
+                <label htmlFor="local-password">Password</label>
+                <div className="auth-password-field">
+                  <Input
+                    id="local-password"
                     autoComplete={
                       mode === "login" ? "current-password" : "new-password"
                     }
                     maxLength={128}
                     minLength={mode === "register" ? 12 : 1}
                     required
-                    type="password"
+                    type={passwordVisible ? "text" : "password"}
                     value={password}
                     onChange={(event) => setPassword(event.target.value)}
                   />
-                </label>
+                  <button
+                    aria-label={
+                      passwordVisible ? "Hide password" : "Show password"
+                    }
+                    aria-pressed={passwordVisible}
+                    onClick={() => setPasswordVisible((visible) => !visible)}
+                    type="button"
+                  >
+                    {passwordVisible ? <EyeOff size={18} /> : <Eye size={18} />}
+                  </button>
+                </div>
                 {mode === "register" && (
                   <small className="auth-password-guidance">
                     Use at least 12 characters. Long, unique passphrases work
@@ -197,13 +231,20 @@ export function AuthScreen({
                   </small>
                 )}
                 {error && <div className="auth-error" role="alert">{error}</div>}
+                {success && (
+                  <div className="auth-success" role="status">
+                    {success}
+                  </div>
+                )}
                 <button
                   className="auth-submit"
                   disabled={pending}
                   type="submit"
                 >
                   {pending
-                    ? "Please wait…"
+                    ? mode === "login"
+                      ? "Opening your network…"
+                      : "Creating your account…"
                     : mode === "login"
                       ? "Log in"
                       : "Create account"}
@@ -216,6 +257,8 @@ export function AuthScreen({
               >
                 Back to preferred sign-in
               </button>
+              </TabsContent>
+              </Tabs>
             </div>
           )}
         </div>

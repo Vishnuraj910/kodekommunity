@@ -71,20 +71,37 @@ test("OIDC is the preferred one-time registration and login flow", async () => {
     start.headers.location,
     `https://identity.example.test/authorize?state=${encodeURIComponent(state)}`,
   );
+  assert.equal(typeof start.headers["set-cookie"], "string");
+  const flowCookie = (start.headers["set-cookie"] as string).split(";", 1)[0];
+
+  const unboundCallback = await app.inject({
+    method: "GET",
+    url: `/api/v1/auth/oidc/callback?code=provider-code&state=${encodeURIComponent(state)}`,
+  });
+  assert.equal(unboundCallback.statusCode, 401);
+  assert.equal(unboundCallback.json().error.code, "INVALID_OIDC_FLOW");
 
   const callback = await app.inject({
     method: "GET",
     url: `/api/v1/auth/oidc/callback?code=provider-code&state=${encodeURIComponent(state)}`,
+    headers: { cookie: flowCookie },
   });
   assert.equal(callback.statusCode, 302);
   assert.equal(callback.headers.location, "http://127.0.0.1:4173/");
-  assert.equal(typeof callback.headers["set-cookie"], "string");
+  const callbackCookies = Array.isArray(callback.headers["set-cookie"])
+    ? callback.headers["set-cookie"]
+    : [callback.headers["set-cookie"]];
+  const sessionCookie = callbackCookies.find(
+    (cookie): cookie is string =>
+      typeof cookie === "string" && cookie.startsWith("kommunity_session="),
+  );
+  assert.ok(sessionCookie);
 
   const session = await app.inject({
     method: "GET",
     url: "/api/v1/auth/session",
     headers: {
-      cookie: (callback.headers["set-cookie"] as string).split(";", 1)[0],
+      cookie: sessionCookie.split(";", 1)[0],
     },
   });
   assert.equal(session.statusCode, 200);

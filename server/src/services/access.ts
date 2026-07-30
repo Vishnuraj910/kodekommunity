@@ -114,8 +114,8 @@ export const changeRole = async (
         }
       }
       if (assignment.eventId) {
-        const event = await transaction.event.findUnique({
-          where: { id: assignment.eventId },
+        const event = await transaction.event.findFirst({
+          where: { id: assignment.eventId, deletedAt: null },
           select: { id: true },
         });
         if (!event) {
@@ -147,6 +147,11 @@ export const changeRole = async (
           );
         }
         if (assignment.role === "ROOT") {
+          await transaction.$executeRaw`
+            SELECT pg_advisory_xact_lock(
+              hashtext('kommunity:active-root-invariant')
+            )
+          `;
           const rootCount = await transaction.roleAssignment.count({
             where: {
               role: "ROOT",
