@@ -73,6 +73,7 @@ export const createMessage = async (
               userId: identity.id,
             },
           },
+          select: { userId: true },
         });
       if (!participant) {
         throw new AppError(

@@ -97,7 +97,7 @@ export const changeRole = async (
 
       const target = await transaction.user.findUnique({
         where: { id: request.targetUserId },
-        select: apiUserSelect,
+        select: { id: true },
       });
       if (!target) {
         throw new AppError(404, "IDENTITY_NOT_FOUND", "Identity not found");
@@ -124,7 +124,10 @@ export const changeRole = async (
       }
 
       const where = assignmentWhere(request.targetUserId, assignment);
-      const existing = await transaction.roleAssignment.findFirst({ where });
+      const existing = await transaction.roleAssignment.findFirst({
+        where,
+        select: { id: true },
+      });
       let changed = false;
       if (request.action === "grant" && !existing) {
         await transaction.roleAssignment.create({

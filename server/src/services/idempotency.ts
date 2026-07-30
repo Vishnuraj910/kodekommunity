@@ -40,6 +40,11 @@ export const runIdempotently = async <T>(
           action: input.action,
         },
       },
+      select: {
+        requestHash: true,
+        response: true,
+        statusCode: true,
+      },
     });
 
     if (existing) {

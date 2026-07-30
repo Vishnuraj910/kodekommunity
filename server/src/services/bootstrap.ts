@@ -18,7 +18,12 @@ export const getBootstrap = async (
           { memberships: { some: { userId, status: "ACTIVE" } } },
         ],
       },
-      include: {
+      select: {
+        id: true,
+        slug: true,
+        name: true,
+        description: true,
+        visibility: true,
         _count: { select: { memberships: { where: { status: "ACTIVE" } } } },
         memberships: {
           where: { userId, status: "ACTIVE" },
@@ -37,7 +42,14 @@ export const getBootstrap = async (
           ],
         },
       },
-      include: {
+      select: {
+        id: true,
+        communityId: true,
+        title: true,
+        description: true,
+        startsAt: true,
+        endsAt: true,
+        location: true,
         _count: { select: { rsvps: { where: { status: "GOING" } } } },
         rsvps: {
           where: { userId, status: "GOING" },
@@ -49,7 +61,12 @@ export const getBootstrap = async (
     }),
     prisma.conversation.findMany({
       where: { participants: { some: { userId } } },
-      include: {
+      select: {
+        id: true,
+        communityId: true,
+        title: true,
+        type: true,
+        updatedAt: true,
         messages: {
           where: { deletedAt: null },
           orderBy: { createdAt: "desc" },

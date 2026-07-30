@@ -216,6 +216,7 @@ model Message {
   author       User         @relation(fields: [authorId], references: [id], onDelete: Restrict)
 
   @@index([conversationId, createdAt, id])
+  @@index([conversationId, createdAt], map: "Message_conversationId_createdAt_idx")
   @@index([authorId, createdAt])
 }
 
