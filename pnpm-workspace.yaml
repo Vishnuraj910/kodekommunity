@@ -7,6 +7,10 @@ minimumReleaseAge: 10080
 minimumReleaseAgeStrict: true
 minimumReleaseAgeIgnoreMissingTime: false
 blockExoticSubdeps: true
+engineStrict: true
+saveExact: true
+strictPeerDependencies: true
+verifyStoreIntegrity: true
 
 # Vite requires esbuild's platform binary setup. No other dependency lifecycle
 # scripts are permitted.

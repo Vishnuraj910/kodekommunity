@@ -49,16 +49,20 @@ import type {
 import {
   lazy,
   Suspense,
+  useCallback,
   useEffect,
   useMemo,
   useRef,
   useState,
+  type Dispatch,
+  type SetStateAction,
 } from "react";
 import {
   communities,
   conversations,
   events as seedEvents,
   initialMessages,
+  isMessageArray,
   people,
   type EventItem,
   type Person,
@@ -67,13 +71,32 @@ import {
   assignmentScope,
   can,
   hasRole,
+  isIdentityStatusDirectory,
+  isRoleDirectory,
   roleAssignmentKey,
   roleDefinitions,
   roleNames,
   toggleAssignment,
+  type AuthorizationContext,
+  type AuthorizationSubject,
+  type IdentityStatusDirectory,
+  type Permission,
   type RoleAssignment,
+  type RoleDirectory,
   type RoleName,
 } from "./roles";
+import {
+  clearKommunityBrowserData,
+  isBoolean,
+  isString,
+  isStringArray,
+  readStoredState,
+  type StateValidator,
+  writeStoredState,
+} from "./storage";
+
+const EIGHT_HOURS_MS = 8 * 60 * 60 * 1_000;
+const ONE_DAY_MS = 24 * 60 * 60 * 1_000;
 
 type Page =
   | "home"
@@ -121,23 +144,51 @@ const pageTitles: Record<Page, string> = {
   settings: "Settings",
 };
 
-function useLocalState<T>(key: string, initial: T) {
-  const [value, setValue] = useState<T>(() => {
-    const stored = localStorage.getItem(key);
-    if (!stored) return initial;
+const isTheme = (value: unknown): value is "light" | "dark" =>
+  value === "light" || value === "dark";
+
+function useBrowserState<T>(
+  key: string,
+  initial: T,
+  validate: StateValidator<T>,
+  storageKind: "local" | "session" = "local",
+  ttlMs?: number,
+) {
+  const storage = useMemo(() => {
     try {
-      return JSON.parse(stored) as T;
+      return storageKind === "local"
+        ? window.localStorage
+        : window.sessionStorage;
     } catch {
-      return initial;
+      return null;
     }
+  }, [storageKind]);
+  const shouldPersist = useRef(false);
+  const [value, setValue] = useState<T>(() => {
+    return storage
+      ? readStoredState(storage, key, initial, validate)
+      : initial;
   });
 
   useEffect(() => {
-    localStorage.setItem(key, JSON.stringify(value));
-  }, [key, value]);
+    if (!storage || !shouldPersist.current) return;
+    shouldPersist.current = false;
+    writeStoredState(storage, key, value, ttlMs);
+  }, [key, storage, ttlMs, value]);
 
-  return [value, setValue] as const;
+  const setStoredValue = useCallback<Dispatch<SetStateAction<T>>>((next) => {
+    shouldPersist.current = true;
+    setValue(next);
+  }, []);
+
+  return [value, setStoredValue] as const;
 }
+
+const canPreview = (
+  subject: AuthorizationSubject,
+  permission: Permission,
+  context: AuthorizationContext = {},
+): boolean => can(subject, permission, context);
 
 function useModalKeyboard(
   dialogRef: React.RefObject<HTMLElement | null>,
@@ -280,23 +331,23 @@ function Sidebar({
   page,
   onNavigate,
   onCreate,
-  assignments,
+  subject,
   activeRole,
 }: {
   page: Page;
   onNavigate: (page: Page) => void;
   onCreate: () => void;
-  assignments: RoleAssignment[];
+  subject: AuthorizationSubject;
   activeRole: RoleName | "all";
 }): React.JSX.Element {
   const visibleNavItems = navItems.filter(
     (item) =>
       item.id !== "access" ||
-      can(assignments, "platform:manage") ||
-      can(assignments, "platform:maintain"),
+      canPreview(subject, "platform:manage") ||
+      canPreview(subject, "platform:maintain"),
   );
   const primaryRole =
-    roleNames.find((role) => hasRole(assignments, role)) ?? "user";
+    roleNames.find((role) => hasRole(subject.assignments, role)) ?? "user";
 
   return (
     <aside className="sidebar">
@@ -2011,13 +2062,15 @@ function SettingsPage({
   theme,
   onTheme,
   onToast,
-  assignments,
+  subject,
+  onClearLocalData,
   onOpenAccess,
 }: {
   theme: "light" | "dark";
   onTheme: (theme: "light" | "dark") => void;
   onToast: (message: string) => void;
-  assignments: RoleAssignment[];
+  subject: AuthorizationSubject;
+  onClearLocalData: () => void;
   onOpenAccess: () => void;
 }): React.JSX.Element {
   const [discoverable, setDiscoverable] = useState(true);
@@ -2118,7 +2171,7 @@ function SettingsPage({
               </p>
             </div>
             <div className="account-role-list">
-              {assignments.map((assignment) => (
+              {subject.assignments.map((assignment) => (
                 <div key={`${assignment.role}-${assignmentScope(assignment)}`}>
                   <span
                     className={`role-symbol role-${roleDefinitions[assignment.role].tone}`}
@@ -2140,8 +2193,8 @@ function SettingsPage({
                 </div>
               ))}
             </div>
-            {(can(assignments, "platform:manage") ||
-              can(assignments, "platform:maintain")) && (
+            {(canPreview(subject, "platform:manage") ||
+              canPreview(subject, "platform:maintain")) && (
               <Button
                 variant="secondary"
                 size="sm"
@@ -2169,14 +2222,30 @@ function SettingsPage({
               Export my data
             </Button>
           </section>
+          <section className="settings-section">
+            <div>
+              <h2>
+                <LogOut size={18} /> Data on this device
+              </h2>
+              <p>
+                Remove saved preview state, session messages, and Kommunity
+                offline caches from this browser.
+              </p>
+            </div>
+            <Button
+              variant="danger"
+              size="sm"
+              onClick={onClearLocalData}
+            >
+              Clear local data
+            </Button>
+          </section>
           <Button onClick={() => onToast("Settings saved")}>Save changes</Button>
         </div>
       </div>
     </div>
   );
 }
-
-type RoleDirectory = Record<string, RoleAssignment[]>;
 
 const accessMembers = [
   {
@@ -2335,11 +2404,11 @@ function FloatingRoleSwitcher({
 
 function AccessPage({
   directory,
-  viewerAssignments,
+  viewerSubject,
   onToggleAssignment,
 }: {
   directory: RoleDirectory;
-  viewerAssignments: RoleAssignment[];
+  viewerSubject: AuthorizationSubject;
   onToggleAssignment: (
     userId: string,
     assignment: RoleAssignment,
@@ -2347,7 +2416,7 @@ function AccessPage({
 }): React.JSX.Element {
   const [query, setQuery] = useState("");
   const [roleFilter, setRoleFilter] = useState<RoleName | "all">("all");
-  const canEdit = can(viewerAssignments, "platform:manage");
+  const canEdit = canPreview(viewerSubject, "platform:manage");
   const rootCount = Object.values(directory).filter((assignments) =>
     hasRole(assignments, "root"),
   ).length;
@@ -2759,55 +2828,87 @@ const initialRoleDirectory: RoleDirectory = {
   ],
 };
 
+const initialIdentityStatuses: IdentityStatusDirectory = {
+  maya: "active",
+  priya: "active",
+  lena: "active",
+  jon: "active",
+};
+
 function App(): React.JSX.Element {
   const [page, setPage] = useState<Page>("home");
-  const [theme, setTheme] = useLocalState<"light" | "dark">(
+  const [theme, setTheme] = useBrowserState<"light" | "dark">(
     "kommunity-theme",
     "light",
+    isTheme,
   );
-  const [onboarded, setOnboarded] = useLocalState(
+  const [onboarded, setOnboarded] = useBrowserState(
     "kommunity-onboarded",
     true,
+    isBoolean,
   );
-  const [joinedIds, setJoinedIds] = useLocalState<string[]>(
+  const [joinedIds, setJoinedIds] = useBrowserState<string[]>(
     "kommunity-joined",
     communities.filter((item) => item.joined).map((item) => item.id),
+    isStringArray,
   );
-  const [joinedGroupIds, setJoinedGroupIds] = useLocalState<string[]>(
+  const [joinedGroupIds, setJoinedGroupIds] = useBrowserState<string[]>(
     "kommunity-groups",
     ["g1", "g2", "g3"],
+    isStringArray,
   );
-  const [goingIds, setGoingIds] = useLocalState<string[]>(
+  const [goingIds, setGoingIds] = useBrowserState<string[]>(
     "kommunity-going",
     seedEvents.filter((item) => item.going).map((item) => item.id),
+    isStringArray,
   );
-  const [connectedIds, setConnectedIds] = useLocalState<string[]>(
+  const [connectedIds, setConnectedIds] = useBrowserState<string[]>(
     "kommunity-connected",
     [],
+    isStringArray,
   );
-  const [savedPosts, setSavedPosts] = useLocalState<string[]>(
+  const [savedPosts, setSavedPosts] = useBrowserState<string[]>(
     "kommunity-saved",
     [],
+    isStringArray,
   );
-  const [messages, setMessages] = useLocalState(
+  const [messages, setMessages] = useBrowserState(
     "kommunity-messages",
     initialMessages,
+    isMessageArray,
+    "session",
+    EIGHT_HOURS_MS,
   );
-  const [roleDirectory, setRoleDirectory] = useLocalState<RoleDirectory>(
+  const [roleDirectory, setRoleDirectory] = useBrowserState<RoleDirectory>(
     "kommunity-role-directory",
     initialRoleDirectory,
+    isRoleDirectory,
+    "local",
+    ONE_DAY_MS,
   );
-  const [activeRoleKey, setActiveRoleKey] = useLocalState(
+  const [identityStatuses] = useBrowserState<IdentityStatusDirectory>(
+    "kommunity-identity-statuses",
+    initialIdentityStatuses,
+    isIdentityStatusDirectory,
+    "local",
+    ONE_DAY_MS,
+  );
+  const [activeRoleKey, setActiveRoleKey] = useBrowserState(
     "kommunity-active-role",
     "all",
+    isString,
+    "local",
+    ONE_DAY_MS,
   );
   const [createOpen, setCreateOpen] = useState(false);
   const [toast, setToast] = useState<ToastState>(null);
   const viewerAssignments =
     roleDirectory.maya ?? initialRoleDirectory.maya;
+  const viewerStatus = identityStatuses.maya ?? "revoked";
   const canSwitchRoles =
-    hasRole(viewerAssignments, "root") ||
-    hasRole(viewerAssignments, "maintainer");
+    viewerStatus === "active" &&
+    (hasRole(viewerAssignments, "root") ||
+      hasRole(viewerAssignments, "maintainer"));
   const activeRoleAssignment =
     activeRoleKey === "all"
       ? undefined
@@ -2821,6 +2922,10 @@ function App(): React.JSX.Element {
           roleAssignmentKey(assignment) === activeRoleKey,
       )
     : viewerAssignments;
+  const effectiveViewerSubject: AuthorizationSubject = {
+    status: viewerStatus,
+    assignments: effectiveViewerAssignments,
+  };
   const activeRole = activeRoleAssignment?.role ?? "all";
 
   useEffect(() => {
@@ -2864,10 +2969,14 @@ function App(): React.JSX.Element {
       : viewerAssignments;
 
     setActiveRoleKey(nextAssignment ? key : "all");
+    const nextSubject: AuthorizationSubject = {
+      status: viewerStatus,
+      assignments: nextAssignments,
+    };
     if (
       page === "access" &&
-      !can(nextAssignments, "platform:manage") &&
-      !can(nextAssignments, "platform:maintain")
+      !canPreview(nextSubject, "platform:manage") &&
+      !canPreview(nextSubject, "platform:maintain")
     ) {
       setPage("home");
     }
@@ -2953,7 +3062,7 @@ function App(): React.JSX.Element {
     target: RoleAssignment,
   ) => {
     const role = target.role;
-    if (!can(effectiveViewerAssignments, "platform:manage")) {
+    if (!canPreview(effectiveViewerSubject, "platform:manage")) {
       showToast("Only root can change role assignments");
       return;
     }
@@ -2982,6 +3091,20 @@ function App(): React.JSX.Element {
     showToast(
       `${roleDefinitions[role].label} ${adding ? "assigned" : "removed"}`,
     );
+  };
+
+  const clearLocalData = async () => {
+    const confirmed = window.confirm(
+      "Clear Kommunity data from this browser? This removes saved preview state, session messages, and offline caches.",
+    );
+    if (!confirmed) return;
+
+    try {
+      await clearKommunityBrowserData();
+      window.location.reload();
+    } catch {
+      showToast("Could not clear all local data. Please try again.");
+    }
   };
 
   const pageContent = useMemo(() => {
@@ -3018,8 +3141,8 @@ function App(): React.JSX.Element {
             onToggle={toggleGroup}
             onToast={showToast}
             onNavigate={navigate}
-            canManageCommunity={can(
-              effectiveViewerAssignments,
+            canManageCommunity={canPreview(
+              effectiveViewerSubject,
               "community:manage",
               { communityId: "c1" },
             )}
@@ -3031,12 +3154,12 @@ function App(): React.JSX.Element {
             goingIds={goingIds}
             onToggleGoing={toggleGoing}
             onNotify={() => navigate("notifications")}
-            canManageCommunity={can(
-              effectiveViewerAssignments,
+            canManageCommunity={canPreview(
+              effectiveViewerSubject,
               "community:manage",
               { communityId: "c1" },
             )}
-            canPresent={can(effectiveViewerAssignments, "event:present", {
+            canPresent={canPreview(effectiveViewerSubject, "event:present", {
               communityId: "c1",
               eventId: "e1",
             })}
@@ -3064,7 +3187,7 @@ function App(): React.JSX.Element {
         return (
           <AccessPage
             directory={roleDirectory}
-            viewerAssignments={effectiveViewerAssignments}
+            viewerSubject={effectiveViewerSubject}
             onToggleAssignment={updateMemberRole}
           />
         );
@@ -3082,7 +3205,8 @@ function App(): React.JSX.Element {
             theme={theme}
             onTheme={setTheme}
             onToast={showToast}
-            assignments={effectiveViewerAssignments}
+            subject={effectiveViewerSubject}
+            onClearLocalData={clearLocalData}
             onOpenAccess={() => navigate("access")}
           />
         );
@@ -3098,6 +3222,7 @@ function App(): React.JSX.Element {
     roleDirectory,
     savedPosts,
     theme,
+    viewerStatus,
   ]);
 
   if (!onboarded) {
@@ -3110,7 +3235,7 @@ function App(): React.JSX.Element {
         page={page}
         onNavigate={navigate}
         onCreate={() => setCreateOpen(true)}
-        assignments={effectiveViewerAssignments}
+        subject={effectiveViewerSubject}
         activeRole={activeRole}
       />
       <MobileHeader page={page} onNavigate={navigate} />

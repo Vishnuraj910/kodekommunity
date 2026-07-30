@@ -2,7 +2,9 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  activeSubject,
   can,
+  isIdentityStatusDirectory,
   roleAssignmentKey,
   toggleAssignment,
 } from "../src/roles.ts";
@@ -14,24 +16,62 @@ test("scoped permissions fail closed without matching context", () => {
     { role: "presenter", scope: "event", scopeId: "event-a" },
   ];
 
-  assert.equal(can(assignments, "community:manage"), false);
+  const subject = activeSubject(assignments);
+
+  assert.equal(can(subject, "community:manage"), false);
   assert.equal(
-    can(assignments, "community:manage", { communityId: "community-b" }),
+    can(subject, "community:manage", { communityId: "community-b" }),
     false,
   );
   assert.equal(
-    can(assignments, "community:manage", { communityId: "community-a" }),
+    can(subject, "community:manage", { communityId: "community-a" }),
     true,
   );
-  assert.equal(can(assignments, "event:present"), false);
+  assert.equal(can(subject, "event:present"), false);
   assert.equal(
-    can(assignments, "event:present", { eventId: "event-b" }),
+    can(subject, "event:present", { eventId: "event-b" }),
     false,
   );
   assert.equal(
-    can(assignments, "event:present", { eventId: "event-a" }),
+    can(subject, "event:present", { eventId: "event-a" }),
     true,
   );
+});
+
+test("inactive identities cannot retain access", () => {
+  const assignments = [
+    { role: "root", scope: "platform" },
+    { role: "user", scope: "platform" },
+  ];
+
+  for (const status of ["invited", "disabled", "revoked"]) {
+    assert.equal(
+      can({ status, assignments }, "platform:manage"),
+      false,
+      `${status} identity must fail closed`,
+    );
+  }
+});
+
+test("privileged identities still require explicit scoped context", () => {
+  const root = activeSubject([
+    { role: "root", scope: "platform" },
+    { role: "user", scope: "platform" },
+  ]);
+
+  assert.equal(can(root, "community:manage"), false);
+  assert.equal(can(root, "event:present"), false);
+  assert.equal(
+    can(root, "community:manage", { communityId: "community-a" }),
+    true,
+  );
+  assert.equal(can(root, "event:present", { eventId: "event-a" }), true);
+});
+
+test("identity status directories reject unknown lifecycle states", () => {
+  assert.equal(isIdentityStatusDirectory({ maya: "active" }), true);
+  assert.equal(isIdentityStatusDirectory({ maya: "suspended" }), false);
+  assert.equal(isIdentityStatusDirectory({}), false);
 });
 
 test("toggling a scoped role preserves grants for other scopes", () => {

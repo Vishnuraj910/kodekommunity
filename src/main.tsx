@@ -11,8 +11,10 @@ createRoot(document.getElementById("root")!).render(
 
 if ("serviceWorker" in navigator && import.meta.env.PROD) {
   window.addEventListener("load", () => {
-    navigator.serviceWorker.register("/sw.js").catch(() => {
-      // Offline support is a progressive enhancement; the app remains usable.
-    });
+    navigator.serviceWorker
+      .register("/sw.js", { scope: "/", updateViaCache: "none" })
+      .catch((error: unknown) => {
+        console.warn("Kommunity offline support could not start.", error);
+      });
   });
 }

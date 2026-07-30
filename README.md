@@ -39,8 +39,10 @@ pnpm dev
 Open [http://127.0.0.1:4173](http://127.0.0.1:4173).
 
 No environment variables or external services are needed for the local
-experience. Interactive state is stored in the browser and can be reset from
-DevTools by clearing local storage.
+experience. Preferences and non-sensitive preview state use versioned,
+validated local storage. Private message previews use session storage and
+expire after eight hours. Settings provides a confirmed action to remove all
+Kommunity-owned browser storage and offline caches.
 
 Role editing in this standalone build is a local permission preview, not a
 security boundary. The production architecture described in `AGENTS.md`
@@ -58,7 +60,22 @@ pnpm build
 
 `pnpm-workspace.yaml` sets `minimumReleaseAge: 10080`, so pnpm will not resolve a
 direct or transitive release until it has been public for seven days. Strict mode
-is enabled and registry metadata without publish timestamps is rejected.
+is enabled, direct dependency versions are pinned, and registry metadata without
+publish timestamps is rejected.
+
+## Security
+
+[SECURITY.md](SECURITY.md) contains the threat model, ranked findings,
+implemented browser controls, required negative cases, and production blockers.
+This prototype must not process real credentials or private production data
+until server-side authentication, tenant isolation, audit, idempotency,
+retention, recovery, and secret-management controls are implemented.
+
+Run the production dependency audit with:
+
+```bash
+pnpm security:audit
+```
 
 ## Production integrations
 
